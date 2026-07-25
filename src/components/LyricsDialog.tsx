@@ -195,6 +195,67 @@ export function LyricsDialog({
     onOpenChange(false);
   };
 
+  const buildSongInfoBlock = (): string => {
+    const s = songInfo ?? {};
+    const rows: string[] = [];
+    if (s.title) rows.push(`Title: ${s.title}`);
+    if (s.artist) rows.push(`Artist: ${s.artist}`);
+    if (s.albumArtist) rows.push(`Album Artist: ${s.albumArtist}`);
+    if (s.album) rows.push(`Album: ${s.album}`);
+    if (s.trackNumber) rows.push(`Track #: ${s.trackNumber}`);
+    if (s.genre) rows.push(`Genre: ${s.genre}`);
+    return rows.length > 0 ? rows.join("\n") : "(no metadata available)";
+  };
+
+  const openGeminiWithPrompt = async (prompt: string) => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success("Prompt copied to clipboard.");
+    } catch {
+      toast.message("Open Gemini and paste the prompt if it isn't pre-filled.");
+    }
+    const url = `https://gemini.google.com/app?q=${encodeURIComponent(prompt)}`;
+    window.open(url, "_blank", "noopener");
+  };
+
+  const hasSyltLines = parseSylt(syltDraft).length > 0;
+
+  const handleFixWithGemini = () => {
+    if (!hasSyltLines) {
+      toast.error("No timestamped lyrics to fix yet.");
+      return;
+    }
+    const prompt =
+      `You are an expert lyric transcription editor. The following are auto-transcribed song lyrics in SYLT format (one line per entry, each starting with a [mm:ss.xx] timestamp). Some words are misheard or incorrect.\n\n` +
+      `Using the song metadata below as context, correct only the misheard or wrong words. Requirements:\n` +
+      `- Keep EVERY [mm:ss.xx] timestamp exactly as-is (do not shift, add, or remove any).\n` +
+      `- Keep the same number of lines and the same order.\n` +
+      `- Do not merge or split lines.\n` +
+      `- Return ONLY the corrected SYLT block. No commentary, no code fences, no extra text.\n\n` +
+      `Song metadata:\n${buildSongInfoBlock()}\n\n` +
+      `Current SYLT lyrics:\n${syltDraft.trim()}\n`;
+    void openGeminiWithPrompt(prompt);
+  };
+
+  const handleTranslateWithGemini = () => {
+    if (!hasSyltLines) {
+      toast.error("No timestamped lyrics to translate yet.");
+      return;
+    }
+    const prompt =
+      `Translate the following SYLT-format song lyrics into natural Korean. For each line, keep the original text and append the Korean translation in parentheses on the same line.\n\n` +
+      `Requirements:\n` +
+      `- Keep EVERY [mm:ss.xx] timestamp exactly as-is (do not shift, add, or remove any).\n` +
+      `- Keep the same number of lines and the same order.\n` +
+      `- Output line format: [mm:ss.xx] original line (한국어 번역)\n` +
+      `- Return ONLY the resulting SYLT block. No commentary, no code fences, no extra text.\n\n` +
+      `Song metadata (for context):\n${buildSongInfoBlock()}\n\n` +
+      `Current SYLT lyrics:\n${syltDraft.trim()}\n`;
+    void openGeminiWithPrompt(prompt);
+  };
+
+
+
   const insertTimestampAtCursor = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
     const now = formatSyltTime(0);
