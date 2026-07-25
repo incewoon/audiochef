@@ -383,6 +383,34 @@ export function LyricsDialog({
               )}
             </div>
 
+            {/* Gemini-assisted helpers (use current SYLT + ID3 context) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleFixWithGemini}
+                disabled={busy !== null || !hasSyltLines}
+                title="Build a prompt to fix misheard words and open Gemini"
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                Fix with Gemini
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleTranslateWithGemini}
+                disabled={busy !== null || !hasSyltLines}
+                title="Build a prompt to translate lyrics into Korean and open Gemini"
+              >
+                <Languages className="mr-1.5 h-4 w-4" />
+                Translate (KR) with Gemini
+              </Button>
+            </div>
+
+
+
             <Textarea
               value={syltDraft}
               onChange={(e) => setSyltDraft(e.target.value)}
