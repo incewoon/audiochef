@@ -28,6 +28,15 @@ type Mode = "uslt" | "sylt";
 
 const LANG_STORAGE_KEY = "audiofly.whisper.lang";
 
+export interface LyricsSongInfo {
+  title?: string;
+  artist?: string;
+  albumArtist?: string;
+  album?: string;
+  trackNumber?: string;
+  genre?: string;
+}
+
 export interface LyricsDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -35,8 +44,10 @@ export interface LyricsDialogProps {
   initialLyrics: string;
   initialSynced: SyltLine[];
   initialMode?: Mode;
+  songInfo?: LyricsSongInfo;
   onSave: (payload: { lyrics: string; syncedLyrics: SyltLine[]; mode: Mode }) => void;
 }
+
 
 export function LyricsDialog({
   open,
