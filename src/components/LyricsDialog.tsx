@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Mic, Download, Check, Trash2 } from "lucide-react";
+import { Loader2, Mic, Download, Check, Trash2, Sparkles, Languages } from "lucide-react";
 import {
   serializeSylt,
   parseSylt,
@@ -28,6 +28,15 @@ type Mode = "uslt" | "sylt";
 
 const LANG_STORAGE_KEY = "audiofly.whisper.lang";
 
+export interface LyricsSongInfo {
+  title?: string;
+  artist?: string;
+  albumArtist?: string;
+  album?: string;
+  trackNumber?: string;
+  genre?: string;
+}
+
 export interface LyricsDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -35,8 +44,10 @@ export interface LyricsDialogProps {
   initialLyrics: string;
   initialSynced: SyltLine[];
   initialMode?: Mode;
+  songInfo?: LyricsSongInfo;
   onSave: (payload: { lyrics: string; syncedLyrics: SyltLine[]; mode: Mode }) => void;
 }
+
 
 export function LyricsDialog({
   open,
@@ -45,8 +56,10 @@ export function LyricsDialog({
   initialLyrics,
   initialSynced,
   initialMode,
+  songInfo,
   onSave,
 }: LyricsDialogProps) {
+
   const [mode, setMode] = useState<Mode>(initialMode ?? (initialSynced.length > 0 ? "sylt" : "uslt"));
   const [usltDraft, setUsltDraft] = useState(initialLyrics);
   const [syltDraft, setSyltDraft] = useState(serializeSylt(initialSynced));
@@ -182,6 +195,67 @@ export function LyricsDialog({
     onOpenChange(false);
   };
 
+  const buildSongInfoBlock = (): string => {
+    const s = songInfo ?? {};
+    const rows: string[] = [];
+    if (s.title) rows.push(`Title: ${s.title}`);
+    if (s.artist) rows.push(`Artist: ${s.artist}`);
+    if (s.albumArtist) rows.push(`Album Artist: ${s.albumArtist}`);
+    if (s.album) rows.push(`Album: ${s.album}`);
+    if (s.trackNumber) rows.push(`Track #: ${s.trackNumber}`);
+    if (s.genre) rows.push(`Genre: ${s.genre}`);
+    return rows.length > 0 ? rows.join("\n") : "(no metadata available)";
+  };
+
+  const openGeminiWithPrompt = async (prompt: string) => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success("Prompt copied to clipboard.");
+    } catch {
+      toast.message("Open Gemini and paste the prompt if it isn't pre-filled.");
+    }
+    const url = `https://gemini.google.com/app?q=${encodeURIComponent(prompt)}`;
+    window.open(url, "_blank", "noopener");
+  };
+
+  const hasSyltLines = parseSylt(syltDraft).length > 0;
+
+  const handleFixWithGemini = () => {
+    if (!hasSyltLines) {
+      toast.error("No timestamped lyrics to fix yet.");
+      return;
+    }
+    const prompt =
+      `You are an expert lyric transcription editor. The following are auto-transcribed song lyrics in SYLT format (one line per entry, each starting with a [mm:ss.xx] timestamp). Some words are misheard or incorrect.\n\n` +
+      `Using the song metadata below as context, correct only the misheard or wrong words. Requirements:\n` +
+      `- Keep EVERY [mm:ss.xx] timestamp exactly as-is (do not shift, add, or remove any).\n` +
+      `- Keep the same number of lines and the same order.\n` +
+      `- Do not merge or split lines.\n` +
+      `- Return ONLY the corrected SYLT block. No commentary, no code fences, no extra text.\n\n` +
+      `Song metadata:\n${buildSongInfoBlock()}\n\n` +
+      `Current SYLT lyrics:\n${syltDraft.trim()}\n`;
+    void openGeminiWithPrompt(prompt);
+  };
+
+  const handleTranslateWithGemini = () => {
+    if (!hasSyltLines) {
+      toast.error("No timestamped lyrics to translate yet.");
+      return;
+    }
+    const prompt =
+      `Translate the following SYLT-format song lyrics into natural Korean. For each line, keep the original text and append the Korean translation in parentheses on the same line.\n\n` +
+      `Requirements:\n` +
+      `- Keep EVERY [mm:ss.xx] timestamp exactly as-is (do not shift, add, or remove any).\n` +
+      `- Keep the same number of lines and the same order.\n` +
+      `- Output line format: [mm:ss.xx] original line (한국어 번역)\n` +
+      `- Return ONLY the resulting SYLT block. No commentary, no code fences, no extra text.\n\n` +
+      `Song metadata (for context):\n${buildSongInfoBlock()}\n\n` +
+      `Current SYLT lyrics:\n${syltDraft.trim()}\n`;
+    void openGeminiWithPrompt(prompt);
+  };
+
+
+
   const insertTimestampAtCursor = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
     const now = formatSyltTime(0);
@@ -308,6 +382,34 @@ export function LyricsDialog({
                 </Button>
               )}
             </div>
+
+            {/* Gemini-assisted helpers (use current SYLT + ID3 context) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleFixWithGemini}
+                disabled={busy !== null || !hasSyltLines}
+                title="Build a prompt to fix misheard words and open Gemini"
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                Fix with Gemini
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleTranslateWithGemini}
+                disabled={busy !== null || !hasSyltLines}
+                title="Build a prompt to translate lyrics into Korean and open Gemini"
+              >
+                <Languages className="mr-1.5 h-4 w-4" />
+                Translate (KR) with Gemini
+              </Button>
+            </div>
+
+
 
             <Textarea
               value={syltDraft}
