@@ -28,6 +28,15 @@ import { WHISPER_MODEL_SIZE_LABELS } from "@/lib/engine-assets";
 type Mode = "uslt" | "sylt";
 
 const LANG_STORAGE_KEY = "audiofly.whisper.lang";
+const MODE_STORAGE_KEY = "audiofly.lyrics.mode";
+
+const readSavedMode = (): Mode => {
+  try {
+    const saved = localStorage.getItem(MODE_STORAGE_KEY);
+    if (saved === "uslt" || saved === "sylt") return saved;
+  } catch {}
+  return "sylt";
+};
 
 export interface LyricsSongInfo {
   title?: string;
