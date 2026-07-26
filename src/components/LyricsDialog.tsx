@@ -358,9 +358,25 @@ export function LyricsDialog({
     setSyltDraft(before + now + " " + after);
   };
 
+  const locked = busy !== null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (locked && !v) {
+          toast.message("Extraction in progress — please wait until it finishes.");
+          return;
+        }
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent
+        className="max-w-lg"
+        onPointerDownOutside={(e) => { if (locked) e.preventDefault(); }}
+        onInteractOutside={(e) => { if (locked) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (locked) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle>Edit Lyrics</DialogTitle>
           <DialogDescription>
