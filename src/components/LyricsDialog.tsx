@@ -70,7 +70,7 @@ export function LyricsDialog({
   onSave,
 }: LyricsDialogProps) {
 
-  const [mode, setMode] = useState<Mode>(initialMode ?? (initialSynced.length > 0 ? "sylt" : "uslt"));
+  const [mode, setMode] = useState<Mode>(initialMode ?? (initialSynced.length > 0 ? "sylt" : "sylt"));
   const [usltDraft, setUsltDraft] = useState(initialLyrics);
   const [syltDraft, setSyltDraft] = useState(serializeSylt(initialSynced));
   const [busy, setBusy] = useState<null | "model" | "transcribe" | "download">(null);
