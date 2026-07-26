@@ -552,14 +552,21 @@ export function LyricsDialog({
         )}
 
         <DialogFooter className="!justify-between">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+          <Tabs
+            value={mode}
+            onValueChange={(v) => {
+              const next = v as Mode;
+              setMode(next);
+              try { localStorage.setItem(MODE_STORAGE_KEY, next); } catch {}
+            }}
+          >
             <TabsList>
-              <TabsTrigger value="uslt">USLT</TabsTrigger>
-              <TabsTrigger value="sylt">SYLT</TabsTrigger>
+              <TabsTrigger value="uslt" disabled={locked}>USLT</TabsTrigger>
+              <TabsTrigger value="sylt" disabled={locked}>SYLT</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={locked}>
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={busy !== null}>
