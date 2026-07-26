@@ -83,7 +83,7 @@ export function LyricsDialog({
     if (!open) return;
     setUsltDraft(initialLyrics);
     setSyltDraft(serializeSylt(initialSynced));
-    setMode(initialMode ?? (initialSynced.length > 0 ? "sylt" : "uslt"));
+    setMode(initialMode ?? (initialSynced.length > 0 ? "sylt" : readSavedMode()));
     setBusy(null);
     setModelPct(0);
     setAsrPct(0);
