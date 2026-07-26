@@ -301,7 +301,7 @@ export function TagEditorForm() {
         mp3File={file}
         initialLyrics={lyrics}
         initialSynced={syncedLyrics}
-        initialMode={syncedLyrics.length > 0 ? "sylt" : "uslt"}
+        initialMode={syncedLyrics.length > 0 ? "sylt" : undefined}
         songInfo={{ title, artist, albumArtist, album, trackNumber, genre }}
         onSave={({ lyrics: l, syncedLyrics: sl }) => {
           setLyrics(l);

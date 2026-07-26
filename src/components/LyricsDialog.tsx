@@ -28,6 +28,15 @@ import { WHISPER_MODEL_SIZE_LABELS } from "@/lib/engine-assets";
 type Mode = "uslt" | "sylt";
 
 const LANG_STORAGE_KEY = "audiofly.whisper.lang";
+const MODE_STORAGE_KEY = "audiofly.lyrics.mode";
+
+const readSavedMode = (): Mode => {
+  try {
+    const saved = localStorage.getItem(MODE_STORAGE_KEY);
+    if (saved === "uslt" || saved === "sylt") return saved;
+  } catch {}
+  return "sylt";
+};
 
 export interface LyricsSongInfo {
   title?: string;
@@ -61,7 +70,7 @@ export function LyricsDialog({
   onSave,
 }: LyricsDialogProps) {
 
-  const [mode, setMode] = useState<Mode>(initialMode ?? (initialSynced.length > 0 ? "sylt" : "uslt"));
+  const [mode, setMode] = useState<Mode>(initialMode ?? (initialSynced.length > 0 ? "sylt" : "sylt"));
   const [usltDraft, setUsltDraft] = useState(initialLyrics);
   const [syltDraft, setSyltDraft] = useState(serializeSylt(initialSynced));
   const [busy, setBusy] = useState<null | "model" | "transcribe" | "download">(null);
@@ -74,7 +83,7 @@ export function LyricsDialog({
     if (!open) return;
     setUsltDraft(initialLyrics);
     setSyltDraft(serializeSylt(initialSynced));
-    setMode(initialMode ?? (initialSynced.length > 0 ? "sylt" : "uslt"));
+    setMode(initialMode ?? (initialSynced.length > 0 ? "sylt" : readSavedMode()));
     setBusy(null);
     setModelPct(0);
     setAsrPct(0);
@@ -349,9 +358,25 @@ export function LyricsDialog({
     setSyltDraft(before + now + " " + after);
   };
 
+  const locked = busy !== null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (locked && !v) {
+          toast.message("Extraction in progress — please wait until it finishes.");
+          return;
+        }
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent
+        className={`max-w-lg ${locked ? "[&>button.absolute]:hidden" : ""}`}
+        onPointerDownOutside={(e) => { if (locked) e.preventDefault(); }}
+        onInteractOutside={(e) => { if (locked) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (locked) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle>Edit Lyrics</DialogTitle>
           <DialogDescription>
@@ -527,14 +552,21 @@ export function LyricsDialog({
         )}
 
         <DialogFooter className="!justify-between">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+          <Tabs
+            value={mode}
+            onValueChange={(v) => {
+              const next = v as Mode;
+              setMode(next);
+              try { localStorage.setItem(MODE_STORAGE_KEY, next); } catch {}
+            }}
+          >
             <TabsList>
-              <TabsTrigger value="uslt">USLT</TabsTrigger>
-              <TabsTrigger value="sylt">SYLT</TabsTrigger>
+              <TabsTrigger value="uslt" disabled={locked}>USLT</TabsTrigger>
+              <TabsTrigger value="sylt" disabled={locked}>SYLT</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={locked}>
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={busy !== null}>
