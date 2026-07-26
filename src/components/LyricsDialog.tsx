@@ -1,6 +1,6 @@
 // src/components/LyricsDialog.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Mic, Download, Check, Trash2, Sparkles, Languages } from "lucide-react";
+import { Loader2, Mic, Download, Check, Sparkles, Languages, Play, Pause } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import {
   serializeSylt,
   parseSylt,
@@ -123,16 +124,99 @@ export function LyricsDialog({
     }
   };
 
-  const handleDeleteModel = async () => {
-    try {
-      const { deleteWhisperModel } = await import("@/lib/whisper/transcribe");
-      await deleteWhisperModel(lang);
-      setModelReady(false);
-      toast.success(`${lang === "ko" ? "Korean" : "English"} module removed.`);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to remove module.");
+  // ---- Local audio player (offline, object URL only) ----
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const seekingRef = useRef(false);
+  const [playing, setPlaying] = useState(false);
+  const [currentMs, setCurrentMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+
+  useEffect(() => {
+    setPlaying(false);
+    setCurrentMs(0);
+    setDurationMs(0);
+    if (!mp3File) {
+      audioRef.current = null;
+      return;
+    }
+    const url = URL.createObjectURL(mp3File);
+    const audio = new Audio(url);
+    audio.preload = "metadata";
+    audioRef.current = audio;
+
+    const onMeta = () => {
+      if (Number.isFinite(audio.duration)) setDurationMs(audio.duration * 1000);
+    };
+    const onEnded = () => {
+      setPlaying(false);
+      setCurrentMs(0);
+    };
+    audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("durationchange", onMeta);
+    audio.addEventListener("ended", onEnded);
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener("loadedmetadata", onMeta);
+      audio.removeEventListener("durationchange", onMeta);
+      audio.removeEventListener("ended", onEnded);
+      audioRef.current = null;
+      URL.revokeObjectURL(url);
+    };
+  }, [mp3File, open]);
+
+  // Smooth playhead updates while playing
+  useEffect(() => {
+    if (!playing) {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      return;
+    }
+    const tick = () => {
+      const audio = audioRef.current;
+      if (audio && !seekingRef.current) setCurrentMs(audio.currentTime * 1000);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [playing]);
+
+  // Pause when the dialog closes or a heavy task starts
+  useEffect(() => {
+    if (!open || busy !== null) {
+      audioRef.current?.pause();
+      setPlaying(false);
+    }
+  }, [open, busy]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    } else {
+      audio.pause();
+      setPlaying(false);
     }
   };
+
+  const onSeekChange = (vals: number[]) => {
+    seekingRef.current = true;
+    setCurrentMs(vals[0] ?? 0);
+  };
+
+  const onSeekCommit = (vals: number[]) => {
+    const ms = vals[0] ?? 0;
+    const audio = audioRef.current;
+    if (audio) audio.currentTime = ms / 1000;
+    setCurrentMs(ms);
+    seekingRef.current = false;
+  };
+
 
   const runTranscription = async () => {
     if (!mp3File) {
@@ -370,17 +454,6 @@ export function LyricsDialog({
                   <span className="text-[11px] text-muted-foreground w-14 text-right">ASR {asrPct}%</span>
                 </div>
               )}
-              {modelReady && busy === null && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleDeleteModel}
-                  title="Remove installed module"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
             </div>
 
             {/* Gemini-assisted helpers (use current SYLT + ID3 context) */}
@@ -409,6 +482,34 @@ export function LyricsDialog({
               </Button>
             </div>
 
+            {/* Audio player: scrub the track and read exact timestamps */}
+            <div className="space-y-1.5 rounded-md border p-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="secondary"
+                  className="h-8 w-8 rounded-full shrink-0"
+                  onClick={togglePlay}
+                  disabled={!mp3File || busy !== null}
+                  title={playing ? "Pause" : "Play"}
+                >
+                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
+                <span className="font-mono text-[12px] tabular-nums">
+                  {formatSyltTime(Math.round(currentMs))}
+                  <span className="text-muted-foreground"> / {formatSyltTime(Math.round(durationMs))}</span>
+                </span>
+              </div>
+              <Slider
+                value={[Math.min(currentMs, durationMs || 0)]}
+                max={durationMs || 1}
+                step={10}
+                disabled={!mp3File || durationMs <= 0}
+                onValueChange={onSeekChange}
+                onValueCommit={onSeekCommit}
+              />
+            </div>
 
 
             <Textarea
