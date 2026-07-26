@@ -371,17 +371,6 @@ export function LyricsDialog({
                   <span className="text-[11px] text-muted-foreground w-14 text-right">ASR {asrPct}%</span>
                 </div>
               )}
-              {modelReady && busy === null && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleDeleteModel}
-                  title="Remove installed module"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
             </div>
 
             {/* Gemini-assisted helpers (use current SYLT + ID3 context) */}
