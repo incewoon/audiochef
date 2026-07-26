@@ -410,6 +410,34 @@ export function LyricsDialog({
               </Button>
             </div>
 
+            {/* Audio player: scrub the track and read exact timestamps */}
+            <div className="space-y-1.5 rounded-md border p-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="secondary"
+                  className="h-8 w-8 rounded-full shrink-0"
+                  onClick={togglePlay}
+                  disabled={!mp3File || busy !== null}
+                  title={playing ? "Pause" : "Play"}
+                >
+                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
+                <span className="font-mono text-[12px] tabular-nums">
+                  {formatSyltTime(Math.round(currentMs))}
+                  <span className="text-muted-foreground"> / {formatSyltTime(Math.round(durationMs))}</span>
+                </span>
+              </div>
+              <Slider
+                value={[Math.min(currentMs, durationMs || 0)]}
+                max={durationMs || 1}
+                step={10}
+                disabled={!mp3File || durationMs <= 0}
+                onValueChange={onSeekChange}
+                onValueCommit={onSeekCommit}
+              />
+            </div>
 
 
             <Textarea
