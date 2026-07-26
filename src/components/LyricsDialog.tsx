@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Mic, Download, Check, Trash2, Sparkles, Languages } from "lucide-react";
+import { Loader2, Mic, Download, Check, Sparkles, Languages, Play, Pause } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import {
   serializeSylt,
   parseSylt,
