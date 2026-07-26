@@ -372,7 +372,7 @@ export function LyricsDialog({
       }}
     >
       <DialogContent
-        className="max-w-lg"
+        className={`max-w-lg ${locked ? "[&>button.absolute]:hidden" : ""}`}
         onPointerDownOutside={(e) => { if (locked) e.preventDefault(); }}
         onInteractOutside={(e) => { if (locked) e.preventDefault(); }}
         onEscapeKeyDown={(e) => { if (locked) e.preventDefault(); }}
