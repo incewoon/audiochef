@@ -35,6 +35,32 @@ function modelUrlFor(lang: WhisperLang): string {
   return WHISPER_MODEL_URLS[lang];
 }
 
+// ── Non-speech token cleanup ────────────────────────────────
+// Whisper often emits music notes and bracketed sound tags during instrumental
+// parts (♪, [Music], (박수), [BLANK_AUDIO]…). Strip them so SYLT output stays clean.
+const MUSIC_SYMBOLS_RE = /[♪♫♬♩♭♮♯★☆*~〜]/g;
+const NON_SPEECH_TAG_RE =
+  /[\[\(（【]\s*(music|musik|musique|음악|노래|배경\s*음악|applause|clapping|박수|laughter|웃음|silence|무음|no\s*speech|blank_?audio|inaudible|sound\s*effects?|효과음|instrumental|간주|전주|후주|singing|humming|허밍|noise|소음)\s*[\]\)）】]/gi;
+// A bracketed chunk containing no letters/digits at all is decoration, not lyrics.
+const EMPTY_BRACKET_RE = /[\[\(（【][^\p{L}\p{N}]*[\]\)）】]/gu;
+
+export function cleanSegmentText(text: string): string {
+  return String(text ?? "")
+    .replace(NON_SPEECH_TAG_RE, " ")
+    .replace(MUSIC_SYMBOLS_RE, " ")
+    .replace(EMPTY_BRACKET_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** True when nothing but punctuation/symbols remains after cleanup. */
+export function isNoiseOnly(text: string): boolean {
+  const cleaned = cleanSegmentText(text);
+  if (!cleaned) return true;
+  return !/[\p{L}\p{N}]/u.test(cleaned);
+}
+
+
 function makeAbortableTimeout(ms: number, tag: string) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(`${tag} timed out after ${ms}ms`), ms);
