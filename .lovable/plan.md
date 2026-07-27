@@ -1,34 +1,32 @@
-## 1. Remove the trash icon from the SYLT dialog
+## 1. Cancelling the file picker kicks you back to the converter page
 
-In `src/components/LyricsDialog.tsx`, delete the ghost `Button` with the `Trash2` icon that sits at the end of the "Auto-extract from audio" row (rendered when `modelReady && busy === null`). Also drop the now-unused `handleDeleteModel` function and the `Trash2` import. The `deleteWhisperModel` helper in `src/lib/whisper/transcribe.ts` stays untouched (unused, harmless).
+Observed behaviour: on `/tag-editor`, opening "Choose MP3 file" and then backing out of the system picker lands on `/` instead of the tag editor.
 
-## 2. New audio player row above the lyrics textarea
+Likely cause (to confirm as the first implementation step): on Android Chrome the File System Access API is unavailable, so `pickFileNative` returns `null` and we fall back to clicking the hidden `<input type="file">`. Dismissing that system picker with the device Back gesture pops a browser history entry, so the router navigates from `/tag-editor` back to `/`.
 
-Placement: inside the SYLT branch, directly below the Gemini buttons row and above the SYLT `<Textarea>`.
+Fix — add a history guard around every picker invocation:
 
-Layout (two lines, compact, mobile-first):
+- New helper (e.g. `src/lib/picker-history-guard.ts`) that, while a picker is open, pushes a sentinel history entry (`history.pushState({ afPicker: true }, "", location.href)`) and installs a `popstate` listener.
+- If `popstate` fires while the guard is active, the guard just consumes the sentinel (no navigation happens) and re-arms nothing — the user stays on the current route.
+- The guard is released when the picker resolves (file chosen, `change`/`cancel` event on the input, or window regains focus with a short debounce), removing the sentinel with `history.back()` only if it is still present, so normal back navigation keeps working afterwards.
+- Wire the guard into `pickFileNative` (`src/lib/pick-file.ts`) and into the raw hidden-input `.click()` paths used by `TagEditorForm` (MP3 + album art inputs) and `ConverterForm` (MP4 input), so behaviour is consistent on both pages.
 
-```text
-[ ▶ ]   00:12.34 / 03:41.08
-[==============o---------------------]
-```
+If a quick check shows the pop is caused by something else (e.g. a service-worker driven reload to `start_url: "/"`), the alternative fix is to persist the last route and restore it on load; the guard above is preferred because it doesn't touch the manifest.
 
-- Row 1: a small round play/pause `Button` (`Play` / `Pause` from lucide-react) plus the current time in the same `[mm:ss.xx]` format used by SYLT (reuse `formatSyltTime`) and total duration.
-- Row 2: a full-width shadcn `Slider` bound to current time; dragging seeks the audio.
+## 2. First auto-extracted lyric line always starts at [00:00.00]
 
-Behavior:
-- A hidden `<audio>` element (via `useRef`) whose `src` is an object URL created from `mp3File` with `URL.createObjectURL`, recreated whenever `mp3File` changes and revoked on cleanup / dialog close.
-- Track `currentTime` with a `requestAnimationFrame` loop while playing (smooth enough to read hundredths), and `duration` from the `loadedmetadata` event; reset to 0 and pause when the dialog closes or `mp3File` changes.
-- Slider: `onValueChange` updates displayed time and sets `audio.currentTime`; while dragging, suppress the rAF write-back so the thumb doesn't fight the playhead.
-- Pause automatically on `ended`.
-- When `mp3File` is null, render the row disabled with `00:00.00 / 00:00.00` so the layout stays stable.
-- Auto-extract runs on the same file but does not need to interact with the player; if a transcription starts while audio is playing, pause it (`busy !== null` disables the play button).
+Cause: whisper.cpp reports the first segment's offset as `0` even when the track opens with an intro/silence, and `transcribeMp3` passes `offsets.from` straight through.
 
-This is enough to scrub the track and read the exact timestamp to type into the SYLT lines.
+Fix in the extraction path (`src/components/LyricsDialog.tsx` post-processing plus a small helper in `src/lib/whisper/segment.ts`), reusing the existing `detectSilenceGaps` decoding:
+
+- Add `findFirstVoiceOnsetMs(file)` (or derive it from the existing gap list): decode the MP3 once, find the first window whose RMS exceeds the speech threshold, and treat that as the real vocal onset.
+- Add `snapSegmentStarts(segments, gaps, onsetMs)`:
+  - If the first segment's `startMs` is earlier than the onset, move it to the onset (keeping `endMs`, and never letting start exceed end minus a small floor).
+  - Apply the same rule to any later segment whose start falls inside a detected silence gap: shift it to the end of that gap. This also tightens mid-song lines, not just the first one.
+- Run this before the existing `splitOnSilence` / `normalizeSegments` / SYLT-line mapping so both the live streaming preview and the final `SyltLine[]` use corrected times.
+- Onset detection is a single extra decode of the already-loaded local file — fully offline, no new dependencies.
 
 ## Technical notes
 
-- Single file changes: `src/components/LyricsDialog.tsx`. No changes to `id3.ts`, ffmpeg, whisper, or the service worker.
-- `Slider` from `@/components/ui/slider` (shadcn) — if the file isn't present in the project it gets added from the standard shadcn source.
-- Time formatting reuses the existing `formatSyltTime` export so the player's readout is copy-paste compatible with the SYLT textarea format.
-- No autoplay, no network use — the object URL is fully local, so this works offline.
+- Files touched: `src/lib/pick-file.ts`, a new small history-guard module, `src/components/TagEditorForm.tsx`, `src/components/ConverterForm.tsx`, `src/lib/whisper/segment.ts`, `src/components/LyricsDialog.tsx`.
+- No backend, manifest, ffmpeg, or ID3 format changes.

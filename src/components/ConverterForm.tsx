@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { convertMp4ToMp3 } from "@/lib/convert";
 import { writeId3Tags } from "@/lib/id3";
 import { pickFileNative } from "@/lib/pick-file";
+import { clickFileInputGuarded } from "@/lib/picker-history-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -188,7 +189,7 @@ export function ConverterForm() {
       handleFile(f);
       return;
     }
-    fileRef.current?.click();
+    clickFileInputGuarded(fileRef.current);
   };
 
 
