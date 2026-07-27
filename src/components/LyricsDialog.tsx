@@ -241,12 +241,13 @@ export function LyricsDialog({
     setAsrPct(0);
     setSyltDraft("");
     try {
-      const [{ transcribeMp3 }, { detectSilenceGaps, splitOnSilence, normalizeSegments }] = await Promise.all([
+      const [{ transcribeMp3 }, { detectSilenceGaps, splitOnSilence, normalizeSegments, findFirstVoiceOnsetMs, snapSegmentStarts }] = await Promise.all([
         import("@/lib/whisper/transcribe"),
         import("@/lib/whisper/segment"),
       ]);
 
       const gapsPromise = detectSilenceGaps(mp3File).catch(() => []);
+      const onsetPromise = findFirstVoiceOnsetMs(mp3File).catch(() => 0);
 
       const raw = await transcribeMp3(mp3File, {
         lang,
@@ -264,7 +265,9 @@ export function LyricsDialog({
       });
 
       const gaps = await gapsPromise;
-      const merged = normalizeSegments(splitOnSilence(raw, gaps));
+      const onsetMs = await onsetPromise;
+      const aligned = snapSegmentStarts(raw, gaps, onsetMs);
+      const merged = snapSegmentStarts(normalizeSegments(splitOnSilence(aligned, gaps)), gaps, onsetMs);
       const syltLines: SyltLine[] = merged.map((s) => ({ timeMs: s.startMs, text: s.text }));
       setSyltDraft(serializeSylt(syltLines));
       setMode("sylt");
