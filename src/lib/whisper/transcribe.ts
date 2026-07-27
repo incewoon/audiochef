@@ -303,9 +303,10 @@ export async function transcribeMp3(
       .map((s: any) => ({
         startMs: Math.max(0, Math.round(s.offsets?.from ?? 0)),
         endMs: Math.max(0, Math.round(s.offsets?.to ?? 0)),
-        text: (s.text ?? "").trim(),
+        text: cleanSegmentText(s.text ?? ""),
       }))
-      .filter((s: WhisperSegment) => s.text.length > 0);
+      .filter((s: WhisperSegment) => s.text.length > 0 && !isNoiseOnly(s.text));
+
 
     return segments;
   } catch (err) {
