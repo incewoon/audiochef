@@ -19,6 +19,7 @@ import { Loader2, Upload, Music, FileText, Image as ImageIcon, ArrowLeftRight } 
 import { tagExistingMp3, type Id3Cover, type SyltLine } from "@/lib/id3";
 import { readId3Tags } from "@/lib/id3-read";
 import { pickFileNative } from "@/lib/pick-file";
+import { clickFileInputGuarded } from "@/lib/picker-history-guard";
 import { LyricsDialog } from "@/components/LyricsDialog";
 
 type Status = "idle" | "reading" | "saving";
@@ -106,7 +107,7 @@ export function TagEditorForm() {
       handleFile(f);
       return;
     }
-    fileRef.current?.click();
+    clickFileInputGuarded(fileRef.current);
   };
 
 
@@ -332,12 +333,12 @@ export function TagEditorForm() {
               <div className="flex items-center gap-3">
                 <img src={coverPreview} alt="cover preview" className="h-24 w-24 rounded object-cover border" />
                 <div className="flex flex-col gap-2">
-                  <Button size="sm" variant="outline" onClick={() => coverInputRef.current?.click()}>Change image</Button>
+                  <Button size="sm" variant="outline" onClick={() => clickFileInputGuarded(coverInputRef.current)}>Change image</Button>
                   <Button size="sm" variant="ghost" onClick={clearCover}>Remove</Button>
                 </div>
               </div>
             ) : (
-              <Button variant="outline" className="w-full min-h-11" onClick={() => coverInputRef.current?.click()}>
+              <Button variant="outline" className="w-full min-h-11" onClick={() => clickFileInputGuarded(coverInputRef.current)}>
                 <Upload className="mr-2 h-4 w-4" /> Choose image
               </Button>
             )}
