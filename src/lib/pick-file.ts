@@ -3,6 +3,8 @@
 // picker otherwise returns MediaStore numeric names like "13952.mp4"),
 // and falls back to a hidden <input type="file"> click.
 
+import { beginPickerGuard } from "./picker-history-guard";
+
 export type AcceptMap = Record<string, string[]>;
 
 export async function pickFileNative(opts: {
@@ -13,6 +15,7 @@ export async function pickFileNative(opts: {
     showOpenFilePicker?: (o: unknown) => Promise<FileSystemFileHandle[]>;
   };
   if (typeof anyWin.showOpenFilePicker !== "function") return null;
+  const release = beginPickerGuard();
   try {
     const [handle] = await anyWin.showOpenFilePicker({
       multiple: false,
@@ -25,5 +28,7 @@ export async function pickFileNative(opts: {
     if (e?.name === "AbortError") return null;
     // Not supported / user gesture missing / etc. — silent fallback.
     return null;
+  } finally {
+    window.setTimeout(release, 300);
   }
 }
