@@ -478,17 +478,25 @@ export function LyricsDialog({
               <Button
                 type="button"
                 size="sm"
-                variant="secondary"
-                onClick={runTranscription}
-                disabled={!mp3File || busy !== null || !modelReady}
+                variant={busy === "transcribe" ? "destructive" : "secondary"}
+                onClick={() => {
+                  if (busy === "transcribe") {
+                    abortRef.current?.abort();
+                    toast.message("Stopping after the current part…");
+                    return;
+                  }
+                  void runTranscription();
+                }}
+                disabled={!mp3File || (busy !== null && busy !== "transcribe") || !modelReady}
               >
                 {busy === "model" || busy === "transcribe" ? (
                   <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
                   <Mic className="mr-1.5 h-4 w-4" />
                 )}
-                Auto-extract from audio
+                {busy === "transcribe" ? "Stop extraction" : "Auto-extract from audio"}
               </Button>
+
               {busy === "model" && (
                 <div className="flex-1 flex items-center gap-2">
                   <Progress value={modelPct} className="h-2" />
