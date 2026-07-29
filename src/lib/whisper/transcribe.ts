@@ -201,8 +201,125 @@ async function resetTranscriber() {
   try { current?.destroy?.(); } catch {}
 }
 
+/** Release any live engine instance (called on dialog save/cancel). */
+export async function releaseTranscriber() {
+  await resetTranscriber();
+}
+
 export interface TranscribeOptions extends TranscribeCallbacks {
   lang?: WhisperLang;
+  /** Chunk length in seconds (default 60). */
+  chunkSec?: number;
+  /** Reports chunk-level progress: 1-based index and total chunk count. */
+  onChunk?: (index: number, total: number) => void;
+  /** Abort the whole run between/inside chunks. */
+  signal?: AbortSignal;
+}
+
+async function buildCreateModule() {
+  console.log("[whisper] importing transcriber + local shout wasm module…");
+  const [{ FileTranscriber }, shoutMod] = await Promise.all([
+    import("@transcribe/transcriber"),
+    import(/* @vite-ignore */ SHOUT_WASM_JS_URL),
+  ]);
+  const rawCreateModule = (shoutMod as any).default;
+  if (typeof rawCreateModule !== "function") {
+    throw new Error("Failed to load Whisper WASM module: @transcribe/shout default export is not a function");
+  }
+
+  // shout.wasm.js는 실제 연산 시작 시 pthread 워커를 하나 더 스폰하는데,
+  // Module["mainScriptUrlOrBlob"]을 안 주면 실제 네트워크 경로로 새 Worker를
+  // 띄우고, 그 응답엔 COOP/COEP 헤더가 없어 조용히 차단된다. 같은 파일을
+  // 미리 fetch해 blob: URL로 넘겨 이 제약을 우회한다.
+  const shoutBlobURL = await toBlobURL(SHOUT_WASM_JS_URL, "text/javascript");
+  const createModule = (moduleArg: Record<string, unknown> = {}) =>
+    rawCreateModule({ ...moduleArg, mainScriptUrlOrBlob: shoutBlobURL });
+
+  return { FileTranscriber, createModule };
+}
+
+/** Per-chunk timeout — a single minute of audio should never take this long. */
+const CHUNK_TIMEOUT_MS = 3 * 60_000;
+
+/**
+ * Transcribe one already-chunked WAV. Creates a fresh engine instance and
+ * destroys it before returning so WASM memory never accumulates across chunks.
+ */
+async function transcribeChunk(
+  FileTranscriber: any,
+  createModule: any,
+  model: File,
+  chunkFile: File,
+  lang: WhisperLang,
+  offsetMs: number,
+  leadInMs: number,
+  onLiveSegment: (seg: WhisperSegment) => void,
+  onChunkProgress: (p: number) => void,
+): Promise<WhisperSegment[]> {
+  const collected: WhisperSegment[] = [];
+  const toAbs = (ms: number) => Math.max(0, Math.round(ms - leadInMs + offsetMs));
+
+  const transcriber = new FileTranscriber({
+    createModule,
+    model: model as any,
+    print: (message: string) => console.log("[whisper:stdout]", message),
+    printErr: (message: string) => console.warn("[whisper:stderr]", message),
+    onAbort: () => console.warn("[whisper] wasm aborted"),
+    onExit: (status: unknown) => console.warn("[whisper] wasm exited", status),
+    onSegment: (segment: unknown) => {
+      const seg = (segment as any)?.segment;
+      if (!seg?.text || isNoiseOnly(seg.text)) return;
+      const startMs = toAbs(seg.offsets?.from ?? 0);
+      // Drop anything that lands inside the overlap region — the previous
+      // chunk already produced it.
+      if (startMs < offsetMs - 50) return;
+      const s: WhisperSegment = {
+        startMs,
+        endMs: toAbs(seg.offsets?.to ?? 0),
+        text: cleanSegmentText(seg.text),
+      };
+      collected.push(s);
+      onLiveSegment(s);
+    },
+    onProgress: (p: number) => onChunkProgress(p),
+  });
+
+  cachedTranscriber = transcriber;
+  try {
+    await withTimeout(transcriber.init(), INIT_TIMEOUT_MS, "FileTranscriber.init()");
+    const result: any = await withTimeout(
+      transcriber.transcribe(chunkFile, {
+        lang,
+        threads: Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 4)),
+        token_timestamps: false,
+        suppress_non_speech: true,
+      }),
+      CHUNK_TIMEOUT_MS,
+      "FileTranscriber.transcribe()",
+    );
+
+    const segments: WhisperSegment[] = (result?.transcription ?? [])
+      .map((s: any) => ({
+        startMs: toAbs(s.offsets?.from ?? 0),
+        endMs: toAbs(s.offsets?.to ?? 0),
+        text: cleanSegmentText(s.text ?? ""),
+      }))
+      .filter(
+        (s: WhisperSegment) =>
+          s.text.length > 0 && !isNoiseOnly(s.text) && s.startMs >= offsetMs - 50,
+      );
+
+    return segments.length > 0 ? segments : collected;
+  } catch (err) {
+    console.warn("[whisper] chunk failed", err);
+    // Keep whatever streamed in before the failure.
+    if (collected.length > 0) return collected;
+    throw err;
+  } finally {
+    if (cachedTranscriber === transcriber) cachedTranscriber = null;
+    try { await transcriber.cancel?.(); } catch {}
+    try { transcriber.destroy?.(); } catch {}
+  }
 }
 
 export async function transcribeMp3(
@@ -217,113 +334,61 @@ export async function transcribeMp3(
 
   const lang: WhisperLang = cb.lang ?? "ko";
   console.log("[whisper] loading model…", lang);
-  const collectedSegments: WhisperSegment[] = [];
   const model = await loadModelBlob(lang, cb);
   console.log("[whisper] model ready:", model.size, "bytes");
 
-  console.log("[whisper] validating audio decode…");
-  await assertAudioDecodable(file);
+  console.log("[whisper] decoding + chunking audio…");
+  const { chunkAudioFile, CHUNK_SEC } = await import("./chunk");
+  const chunks = await chunkAudioFile(file, cb.chunkSec ?? CHUNK_SEC);
+  console.log(`[whisper] ${chunks.length} chunk(s) of ~${cb.chunkSec ?? CHUNK_SEC}s`);
 
-  console.log("[whisper] importing transcriber + local shout wasm module…");
-  const [{ FileTranscriber }, shoutMod] = await Promise.all([
-    import("@transcribe/transcriber"),
-    import(/* @vite-ignore */ SHOUT_WASM_JS_URL),
-  ]);
-  const rawCreateModule = (shoutMod as any).default;
-  if (typeof rawCreateModule !== "function") {
-    throw new Error("Failed to load Whisper WASM module: @transcribe/shout default export is not a function");
-  }
+  const { FileTranscriber, createModule } = await buildCreateModule();
 
-  // shout.wasm.js는 실제 연산 시작 시 pthread 워커를 하나 더 스폰하는데,
-  // Module["mainScriptUrlOrBlob"]을 안 주면 실제 네트워크 경로
-  // (new URL("shout.wasm.js", import.meta.url))로 새 Worker를 띄운다.
-  // 이 정적 파일 응답엔 COOP/COEP 헤더가 안 붙어있어(Cloudflare Static
-  // Assets가 Worker fetch 핸들러를 안 거치고 직접 서빙) 그 워커가 조용히
-  // 차단된다(ffmpeg의 classWorkerURL과 동일한 문제). 같은 파일을 우리가
-  // 미리 fetch해서 blob: URL로 만들어 mainScriptUrlOrBlob으로 넘기면,
-  // 네트워크 경로를 아예 안 타므로 이 COEP 제약을 우회한다.
-  const shoutBlobURL = await toBlobURL(SHOUT_WASM_JS_URL, "text/javascript");
-  console.log("[whisper] pthread worker will use blob URL", shoutBlobURL);
-  const createModule = (moduleArg: Record<string, unknown> = {}) =>
-    rawCreateModule({ ...moduleArg, mainScriptUrlOrBlob: shoutBlobURL });
+  const all: WhisperSegment[] = [];
+  let failures = 0;
 
-  try {
-    if (!cachedTranscriber) {
-      console.log("[whisper] initializing FileTranscriber…");
-      cachedTranscriber = new FileTranscriber({
+  for (const chunk of chunks) {
+    if (cb.signal?.aborted) break;
+    cb.onChunk?.(chunk.index + 1, chunks.length);
+    const base = (chunk.index / chunks.length) * 100;
+    const span = 100 / chunks.length;
+    cb.onProgress?.(base);
+
+    try {
+      const segs = await transcribeChunk(
+        FileTranscriber,
         createModule,
-        model: model as any,
-        print: (message: string) => console.log("[whisper:stdout]", message),
-        printErr: (message: string) => console.warn("[whisper:stderr]", message),
-        onAbort: () => console.warn("[whisper] wasm aborted"),
-        onExit: (status: unknown) => console.warn("[whisper] wasm exited", status),
-        onComplete: (result: unknown) => console.log("[whisper] complete callback", result),
-        onSegment: (segment: unknown) => {
-          console.log("[whisper] segment", segment);
-          const seg = (segment as any)?.segment;
-          if (seg?.text && !isNoiseOnly(seg.text)) {
-            const s: WhisperSegment = {
-              startMs: Math.max(0, Math.round(seg.offsets?.from ?? 0)),
-              endMs: Math.max(0, Math.round(seg.offsets?.to ?? 0)),
-              text: cleanSegmentText(seg.text),
-            };
-            collectedSegments.push(s);   // 추가: 실패 시 부분 결과 복구용
-            cb.onSegment?.(s);
-          }
-        },
-
-        onProgress: (p: number) => {
-          console.log("[whisper] progress", p);
-          cb.onProgress?.(p);
-        },
-      });
-      await withTimeout(cachedTranscriber.init(), INIT_TIMEOUT_MS, "FileTranscriber.init()");
-      console.log("[whisper] init done");
-    } else {
-      cachedTranscriber.onProgress = (p: number) => {
-        console.log("[whisper] progress", p);
-        cb.onProgress?.(p);
-      };
-    }
-
-    console.log("[whisper] transcribing…", lang);
-    const result: any = await withTimeout(
-      cachedTranscriber.transcribe(file, {
+        model,
+        chunk.file,
         lang,
-        threads: Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 4)),
-        token_timestamps: false,
-        suppress_non_speech: true,
-      }),
-      TRANSCRIBE_TIMEOUT_MS,
-      "FileTranscriber.transcribe()",
-    );
-    console.log("[whisper] transcribe done", result);
-
-    const segments: WhisperSegment[] = (result.transcription ?? [])
-      .map((s: any) => ({
-        startMs: Math.max(0, Math.round(s.offsets?.from ?? 0)),
-        endMs: Math.max(0, Math.round(s.offsets?.to ?? 0)),
-        text: cleanSegmentText(s.text ?? ""),
-      }))
-      .filter((s: WhisperSegment) => s.text.length > 0 && !isNoiseOnly(s.text));
-
-
-    return segments;
-  } catch (err) {
-    // Drop the cached instance so the next attempt gets a fresh worker.
-    await resetTranscriber();
-    console.error("[whisper] failed", err);
-    // whisper.cpp WASM이 긴 오디오 후반부에서 내부적으로 멈추는 경우가 있고
-    // (failed to decode/encode 이후 응답 없음), 이 실패는 JS로 전달되지
-    // 않아 타임아웃까지 그냥 대기하게 된다. 이미 onSegment로 도착한
-    // 세그먼트가 있다면 버리지 않고 부분 결과로라도 반환한다.
-    if (collectedSegments.length > 0) {
-      console.warn(`[whisper] 실패 후 부분 결과 ${collectedSegments.length}개 세그먼트 반환`);
-      return collectedSegments;
+        chunk.offsetMs,
+        chunk.leadInMs,
+        (seg) => cb.onSegment?.(seg),
+        (p) => cb.onProgress?.(Math.min(100, base + (Math.max(0, Math.min(100, p)) / 100) * span)),
+      );
+      all.push(...segs);
+    } catch (err) {
+      failures++;
+      console.error(`[whisper] chunk ${chunk.index + 1}/${chunks.length} skipped`, err);
+      // A single bad minute shouldn't kill the whole run.
+      if (failures >= 3 && all.length === 0) throw err;
     }
-    throw err;
+    cb.onProgress?.(Math.min(100, base + span));
   }
+
+  await resetTranscriber();
+
+  // Chunk boundaries can produce duplicate/near-duplicate lines; drop them.
+  all.sort((a, b) => a.startMs - b.startMs);
+  const deduped: WhisperSegment[] = [];
+  for (const s of all) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && Math.abs(prev.startMs - s.startMs) < 300 && prev.text === s.text) continue;
+    deduped.push(s);
+  }
+  return deduped;
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // Offline verification (published site only — SW is disabled in preview):
