@@ -76,6 +76,8 @@ export function LyricsDialog({
   const [busy, setBusy] = useState<null | "model" | "transcribe" | "download">(null);
   const [modelPct, setModelPct] = useState(0);
   const [asrPct, setAsrPct] = useState(0);
+  const [chunkInfo, setChunkInfo] = useState<{ index: number; total: number } | null>(null);
+
   const [lang, setLang] = useState<WhisperLang>("ko");
   const [modelReady, setModelReady] = useState<boolean | null>(null);
 
