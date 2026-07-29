@@ -174,19 +174,10 @@ function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   ]);
 }
 
-async function assertAudioDecodable(file: File) {
-  const AudioCtx = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext;
-  if (!AudioCtx) throw new Error("This browser does not support audio decoding.");
-  const ctx = new AudioCtx({ sampleRate: 16000 });
-  try {
-    const buf = await file.arrayBuffer();
-    await withTimeout(ctx.decodeAudioData(buf.slice(0)), 60_000, "AudioContext.decodeAudioData()");
-  } catch (err) {
-    throw new Error(`Could not decode this MP3 audio. Try another file. (${err instanceof Error ? err.message : String(err)})`);
-  } finally {
-    ctx.close?.();
-  }
-}
+// Audio decoding now happens in ./chunk.ts (decode + 1-minute chunking), so
+// there's no separate decodability probe here.
+
+
 
 // Do NOT wrap the shout module in a blob: URL. Its default export creates a
 // pthread WASM instance that internally does `new URL(import.meta.url)` to
