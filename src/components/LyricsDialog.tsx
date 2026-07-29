@@ -76,6 +76,10 @@ export function LyricsDialog({
   const [busy, setBusy] = useState<null | "model" | "transcribe" | "download">(null);
   const [modelPct, setModelPct] = useState(0);
   const [asrPct, setAsrPct] = useState(0);
+  const [chunkInfo, setChunkInfo] = useState<{ index: number; total: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+
   const [lang, setLang] = useState<WhisperLang>("ko");
   const [modelReady, setModelReady] = useState<boolean | null>(null);
 
@@ -239,7 +243,10 @@ export function LyricsDialog({
     setBusy("model");
     setModelPct(0);
     setAsrPct(0);
+    setChunkInfo(null);
     setSyltDraft("");
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       const [{ transcribeMp3 }, { detectSilenceGaps, splitOnSilence, normalizeSegments, findFirstVoiceOnsetMs, snapSegmentStarts }] = await Promise.all([
         import("@/lib/whisper/transcribe"),
@@ -251,9 +258,14 @@ export function LyricsDialog({
 
       const raw = await transcribeMp3(mp3File, {
         lang,
+        signal: abort.signal,
         onModelProgress: (loaded, total) => {
           setBusy("model");
           setModelPct(total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0);
+        },
+        onChunk: (index, total) => {
+          setBusy("transcribe");
+          setChunkInfo({ index, total });
         },
         onProgress: (p) => {
           setBusy("transcribe");
@@ -276,9 +288,16 @@ export function LyricsDialog({
       console.error(e);
       toast.error(e?.message ?? "Speech recognition failed.");
     } finally {
+      abortRef.current = null;
+      setChunkInfo(null);
       setBusy(null);
+      try {
+        const { releaseTranscriber } = await import("@/lib/whisper/transcribe");
+        await releaseTranscriber();
+      } catch {}
     }
   };
+
 
   const handleSave = () => {
     const parsed = mode === "sylt" ? parseSylt(syltDraft) : [];
@@ -459,17 +478,25 @@ export function LyricsDialog({
               <Button
                 type="button"
                 size="sm"
-                variant="secondary"
-                onClick={runTranscription}
-                disabled={!mp3File || busy !== null || !modelReady}
+                variant={busy === "transcribe" ? "destructive" : "secondary"}
+                onClick={() => {
+                  if (busy === "transcribe") {
+                    abortRef.current?.abort();
+                    toast.message("Stopping after the current part…");
+                    return;
+                  }
+                  void runTranscription();
+                }}
+                disabled={!mp3File || (busy !== null && busy !== "transcribe") || !modelReady}
               >
                 {busy === "model" || busy === "transcribe" ? (
                   <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
                   <Mic className="mr-1.5 h-4 w-4" />
                 )}
-                Auto-extract from audio
+                {busy === "transcribe" ? "Stop extraction" : "Auto-extract from audio"}
               </Button>
+
               {busy === "model" && (
                 <div className="flex-1 flex items-center gap-2">
                   <Progress value={modelPct} className="h-2" />
@@ -479,9 +506,12 @@ export function LyricsDialog({
               {busy === "transcribe" && (
                 <div className="flex-1 flex items-center gap-2">
                   <Progress value={asrPct} className="h-2" />
-                  <span className="text-[11px] text-muted-foreground w-14 text-right">ASR {asrPct}%</span>
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap text-right">
+                    {chunkInfo ? `Part ${chunkInfo.index}/${chunkInfo.total} · ` : ""}ASR {asrPct}%
+                  </span>
                 </div>
               )}
+
             </div>
 
             {/* Gemini-assisted helpers (use current SYLT + ID3 context) */}
