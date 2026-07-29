@@ -479,9 +479,12 @@ export function LyricsDialog({
               {busy === "transcribe" && (
                 <div className="flex-1 flex items-center gap-2">
                   <Progress value={asrPct} className="h-2" />
-                  <span className="text-[11px] text-muted-foreground w-14 text-right">ASR {asrPct}%</span>
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap text-right">
+                    {chunkInfo ? `Part ${chunkInfo.index}/${chunkInfo.total} · ` : ""}ASR {asrPct}%
+                  </span>
                 </div>
               )}
+
             </div>
 
             {/* Gemini-assisted helpers (use current SYLT + ID3 context) */}
