@@ -241,7 +241,10 @@ export function LyricsDialog({
     setBusy("model");
     setModelPct(0);
     setAsrPct(0);
+    setChunkInfo(null);
     setSyltDraft("");
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       const [{ transcribeMp3 }, { detectSilenceGaps, splitOnSilence, normalizeSegments, findFirstVoiceOnsetMs, snapSegmentStarts }] = await Promise.all([
         import("@/lib/whisper/transcribe"),
@@ -253,9 +256,14 @@ export function LyricsDialog({
 
       const raw = await transcribeMp3(mp3File, {
         lang,
+        signal: abort.signal,
         onModelProgress: (loaded, total) => {
           setBusy("model");
           setModelPct(total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0);
+        },
+        onChunk: (index, total) => {
+          setBusy("transcribe");
+          setChunkInfo({ index, total });
         },
         onProgress: (p) => {
           setBusy("transcribe");
@@ -278,9 +286,16 @@ export function LyricsDialog({
       console.error(e);
       toast.error(e?.message ?? "Speech recognition failed.");
     } finally {
+      abortRef.current = null;
+      setChunkInfo(null);
       setBusy(null);
+      try {
+        const { releaseTranscriber } = await import("@/lib/whisper/transcribe");
+        await releaseTranscriber();
+      } catch {}
     }
   };
+
 
   const handleSave = () => {
     const parsed = mode === "sylt" ? parseSylt(syltDraft) : [];
