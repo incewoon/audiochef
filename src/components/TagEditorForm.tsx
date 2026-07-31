@@ -15,7 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Loader2, Upload, Music, FileText, Image as ImageIcon, ArrowLeftRight } from "lucide-react";
+import { Loader2, Upload, Music, FileText, Image as ImageIcon, ArrowLeftRight, Search } from "lucide-react";
 import { tagExistingMp3, type Id3Cover, type SyltLine } from "@/lib/id3";
 import { readId3Tags } from "@/lib/id3-read";
 import { pickFileNative } from "@/lib/pick-file";
@@ -23,6 +23,21 @@ import { clickFileInputGuarded } from "@/lib/picker-history-guard";
 import { LyricsDialog } from "@/components/LyricsDialog";
 
 type Status = "idle" | "reading" | "saving";
+
+/** Build a Google Images query from available ID3 values, skipping empties/duplicates. */
+function buildCoverQuery(parts: Array<string | undefined>): string {
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const p of parts) {
+    const v = (p ?? "").trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    words.push(v);
+  }
+  return words.join(" ");
+}
 
 
 export function TagEditorForm() {
