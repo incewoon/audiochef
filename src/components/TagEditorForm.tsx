@@ -15,7 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Loader2, Upload, Music, FileText, Image as ImageIcon, ArrowLeftRight } from "lucide-react";
+import { Loader2, Upload, Music, FileText, Image as ImageIcon, ArrowLeftRight, Search } from "lucide-react";
 import { tagExistingMp3, type Id3Cover, type SyltLine } from "@/lib/id3";
 import { readId3Tags } from "@/lib/id3-read";
 import { pickFileNative } from "@/lib/pick-file";
@@ -23,6 +23,21 @@ import { clickFileInputGuarded } from "@/lib/picker-history-guard";
 import { LyricsDialog } from "@/components/LyricsDialog";
 
 type Status = "idle" | "reading" | "saving";
+
+/** Build a Google Images query from available ID3 values, skipping empties/duplicates. */
+function buildCoverQuery(parts: Array<string | undefined>): string {
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const p of parts) {
+    const v = (p ?? "").trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    words.push(v);
+  }
+  return words.join(" ");
+}
 
 
 export function TagEditorForm() {
@@ -131,6 +146,19 @@ export function TagEditorForm() {
     setCover(null);
     setCoverPreview(null);
   };
+
+  const coverQuery = buildCoverQuery([artist, album, title]);
+
+  const openCoverSearch = () => {
+    if (!coverQuery) return;
+    const q = encodeURIComponent(`${coverQuery} album cover`);
+    window.open(
+      `https://www.google.com/search?tbm=isch&q=${q}&tbs=isz:lt,islt:svga`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
 
   const handleSave = async () => {
     if (!file) {
@@ -329,6 +357,22 @@ export function TagEditorForm() {
               className="hidden"
               onChange={(e) => handleCoverPick(e.target.files?.[0] ?? null)}
             />
+
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full min-h-11"
+              disabled={!coverQuery}
+              onClick={openCoverSearch}
+            >
+              <Search className="mr-2 h-4 w-4" /> Search album art on Google
+            </Button>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {coverQuery
+                ? "Long-press an image to save it, then load it with “Choose image”."
+                : "Enter a title, artist, or album first to search."}
+            </p>
+
             {coverPreview ? (
               <div className="flex items-center gap-3">
                 <img src={coverPreview} alt="cover preview" className="h-24 w-24 rounded object-cover border" />
