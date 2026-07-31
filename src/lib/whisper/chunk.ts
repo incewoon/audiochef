@@ -50,28 +50,97 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-/** Decode any browser-supported audio file to mono Float32 PCM at 16kHz. */
+/**
+ * Decode any browser-supported audio file to mono Float32 PCM at 16kHz, with a
+ * vocal-emphasis chain so loud instrumentation (rock/metal) doesn't bury the
+ * singing: mid (L+R) sum → 180Hz high-pass (kick/bass) → 5.5kHz low-pass
+ * (cymbals) → 1–3kHz presence boost → compression → peak normalize.
+ */
 export async function decodeToMono16k(
   file: File,
 ): Promise<{ pcm: Float32Array; sampleRate: number }> {
   const AudioCtx = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext;
+  const OfflineCtx =
+    (globalThis as any).OfflineAudioContext || (globalThis as any).webkitOfflineAudioContext;
   if (!AudioCtx) throw new Error("This browser does not support audio decoding.");
+
   const ctx = new AudioCtx({ sampleRate: TARGET_SR });
+  let audio: AudioBuffer;
   try {
     const buf = await file.arrayBuffer();
-    const audio: AudioBuffer = await ctx.decodeAudioData(buf.slice(0));
-    const ch = audio.numberOfChannels;
-    const len = audio.length;
-    const out = new Float32Array(len);
-    for (let c = 0; c < ch; c++) {
-      const data = audio.getChannelData(c);
-      for (let i = 0; i < len; i++) out[i] += data[i];
-    }
-    if (ch > 1) for (let i = 0; i < len; i++) out[i] /= ch;
-    return { pcm: out, sampleRate: audio.sampleRate };
+    audio = await ctx.decodeAudioData(buf.slice(0));
   } finally {
     ctx.close?.();
   }
+
+  if (OfflineCtx) {
+    try {
+      return { pcm: await renderVocalEmphasis(OfflineCtx, audio), sampleRate: TARGET_SR };
+    } catch (err) {
+      console.warn("[whisper] vocal-emphasis preprocessing failed, using raw mix", err);
+    }
+  }
+
+  // Fallback: plain channel average.
+  const ch = audio.numberOfChannels;
+  const len = audio.length;
+  const out = new Float32Array(len);
+  for (let c = 0; c < ch; c++) {
+    const data = audio.getChannelData(c);
+    for (let i = 0; i < len; i++) out[i] += data[i];
+  }
+  if (ch > 1) for (let i = 0; i < len; i++) out[i] /= ch;
+  return { pcm: out, sampleRate: audio.sampleRate };
+}
+
+async function renderVocalEmphasis(OfflineCtx: any, audio: AudioBuffer): Promise<Float32Array> {
+  const offline = new OfflineCtx(1, audio.length, TARGET_SR);
+
+  const src = offline.createBufferSource();
+  src.buffer = audio;
+
+  const hp = offline.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 180;
+  hp.Q.value = 0.7;
+
+  const lp = offline.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 5500;
+  lp.Q.value = 0.7;
+
+  const presence = offline.createBiquadFilter();
+  presence.type = "peaking";
+  presence.frequency.value = 2000;
+  presence.Q.value = 0.9;
+  presence.gain.value = 4;
+
+  const comp = offline.createDynamicsCompressor();
+  comp.threshold.value = -28;
+  comp.knee.value = 12;
+  comp.ratio.value = 6;
+  comp.attack.value = 0.004;
+  comp.release.value = 0.18;
+
+  src.connect(hp).connect(lp).connect(presence).connect(comp).connect(offline.destination);
+  src.start(0);
+
+  const rendered: AudioBuffer = await offline.startRendering();
+  const data = rendered.getChannelData(0);
+  const out = new Float32Array(data.length);
+  out.set(data);
+
+  // Peak-normalize to ~0.95 so quiet vocals reach a usable level.
+  let peak = 0;
+  for (let i = 0; i < out.length; i++) {
+    const a = Math.abs(out[i]);
+    if (a > peak) peak = a;
+  }
+  if (peak > 0.0001 && peak < 0.95) {
+    const g = 0.95 / peak;
+    for (let i = 0; i < out.length; i++) out[i] *= g;
+  }
+  return out;
 }
 
 /**
