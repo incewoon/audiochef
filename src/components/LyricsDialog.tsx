@@ -28,6 +28,7 @@ import { WHISPER_MODEL_SIZE_LABELS } from "@/lib/engine-assets";
 type Mode = "uslt" | "sylt";
 
 const LANG_STORAGE_KEY = "audiofly.whisper.lang";
+const MUSIC_STORAGE_KEY = "audiofly.whisper.music";
 const MODE_STORAGE_KEY = "audiofly.lyrics.mode";
 
 const readSavedMode = (): Mode => {
@@ -81,7 +82,14 @@ export function LyricsDialog({
 
 
   const [lang, setLang] = useState<WhisperLang>("ko");
+  const [musicMode, setMusicMode] = useState(false);
   const [modelReady, setModelReady] = useState<boolean | null>(null);
+
+  const modelKey = (musicMode ? `${lang}-music` : lang) as
+    | "ko"
+    | "en"
+    | "ko-music"
+    | "en-music";
 
   useEffect(() => {
     if (!open) return;
@@ -94,6 +102,7 @@ export function LyricsDialog({
     try {
       const saved = localStorage.getItem(LANG_STORAGE_KEY);
       if (saved === "ko" || saved === "en") setLang(saved);
+      setMusicMode(localStorage.getItem(MUSIC_STORAGE_KEY) === "1");
     } catch {}
   }, [open, initialLyrics, initialSynced, initialMode]);
 
@@ -105,18 +114,23 @@ export function LyricsDialog({
       setModelReady(null);
       try {
         const { isWhisperModelCached } = await import("@/lib/whisper/transcribe");
-        const ok = await isWhisperModelCached(lang);
+        const ok = await isWhisperModelCached(modelKey);
         if (!cancelled) setModelReady(ok);
       } catch {
         if (!cancelled) setModelReady(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [open, lang]);
+  }, [open, modelKey]);
 
   const persistLang = (v: WhisperLang) => {
     setLang(v);
     try { localStorage.setItem(LANG_STORAGE_KEY, v); } catch {}
+  };
+
+  const persistMusicMode = (v: boolean) => {
+    setMusicMode(v);
+    try { localStorage.setItem(MUSIC_STORAGE_KEY, v ? "1" : "0"); } catch {}
   };
 
   const handleDownloadModel = async () => {
@@ -124,11 +138,13 @@ export function LyricsDialog({
     setModelPct(0);
     try {
       const { downloadWhisperModel } = await import("@/lib/whisper/transcribe");
-      await downloadWhisperModel(lang, (loaded, total) => {
+      await downloadWhisperModel(modelKey, (loaded, total) => {
         setModelPct(total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0);
       });
       setModelReady(true);
-      toast.success(`${lang === "ko" ? "Korean" : "English"} speech module installed.`);
+      toast.success(
+        `${lang === "ko" ? "Korean" : "English"}${musicMode ? " (music)" : ""} speech module installed.`,
+      );
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Failed to download module.");
@@ -258,6 +274,7 @@ export function LyricsDialog({
 
       const raw = await transcribeMp3(mp3File, {
         lang,
+        music: musicMode,
         signal: abort.signal,
         onModelProgress: (loaded, total) => {
           setBusy("model");
@@ -283,7 +300,15 @@ export function LyricsDialog({
       const syltLines: SyltLine[] = merged.map((s) => ({ timeMs: s.startMs, text: s.text }));
       setSyltDraft(serializeSylt(syltLines));
       setMode("sylt");
-      toast.success(`Extracted ${syltLines.length} lines.`);
+      if (syltLines.length === 0) {
+        toast.warning(
+          musicMode
+            ? "No lyrics detected. The backing track may be too loud for recognition."
+            : "No lyrics detected. Turn on Music mode for loud tracks and try again.",
+        );
+      } else {
+        toast.success(`Extracted ${syltLines.length} lines.`);
+      }
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Speech recognition failed.");
@@ -425,7 +450,7 @@ export function LyricsDialog({
                     <Check className="h-3.5 w-3.5" /> Module: installed
                   </span>
                 ) : (
-                  <span className="text-muted-foreground">Module: not installed ({WHISPER_MODEL_SIZE_LABELS[lang]})</span>
+                  <span className="text-muted-foreground">Module: not installed ({WHISPER_MODEL_SIZE_LABELS[modelKey]})</span>
                 )}
               </div>
               <div className="flex items-center gap-1">
@@ -447,6 +472,25 @@ export function LyricsDialog({
                 </button>
               </div>
             </div>
+
+            {/* Music mode — bigger model + relaxed thresholds for loud tracks */}
+            <label className="flex items-start gap-2 rounded-md border p-2 text-[12px]">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-primary"
+                checked={musicMode}
+                onChange={(e) => persistMusicMode(e.target.checked)}
+                disabled={busy !== null}
+              />
+              <span className="leading-relaxed">
+                <span className="font-medium">Music mode (loud tracks)</span>
+                <span className="block text-muted-foreground">
+                  Use the high-accuracy model for rock/band recordings where vocals sit under the
+                  instruments. One-time {WHISPER_MODEL_SIZE_LABELS[`${lang}-music`]} download; roughly
+                  2–3× slower.
+                </span>
+              </span>
+            </label>
 
             {/* Module download / delete */}
             {!modelReady && (
