@@ -147,6 +147,19 @@ export function TagEditorForm() {
     setCoverPreview(null);
   };
 
+  const coverQuery = buildCoverQuery([artist, album, title]);
+
+  const openCoverSearch = () => {
+    if (!coverQuery) return;
+    const q = encodeURIComponent(`${coverQuery} album cover`);
+    window.open(
+      `https://www.google.com/search?tbm=isch&q=${q}&tbs=isz:lt,islt:svga`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+
   const handleSave = async () => {
     if (!file) {
       toast.error("Please choose an MP3 file first.");
@@ -344,6 +357,22 @@ export function TagEditorForm() {
               className="hidden"
               onChange={(e) => handleCoverPick(e.target.files?.[0] ?? null)}
             />
+
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full min-h-11"
+              disabled={!coverQuery}
+              onClick={openCoverSearch}
+            >
+              <Search className="mr-2 h-4 w-4" /> Search album art on Google
+            </Button>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {coverQuery
+                ? "Long-press an image to save it, then load it with “Choose image”."
+                : "Enter a title, artist, or album first to search."}
+            </p>
+
             {coverPreview ? (
               <div className="flex items-center gap-3">
                 <img src={coverPreview} alt="cover preview" className="h-24 w-24 rounded object-cover border" />
