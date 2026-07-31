@@ -26,13 +26,19 @@ import {
 } from "../engine-assets";
 
 export type WhisperLang = "ko" | "en";
+/** Model bucket: base for speech, "-music" (small) for loud instrumentation. */
+export type WhisperModelKey = "ko" | "en" | "ko-music" | "en-music";
+
+export function modelKeyFor(lang: WhisperLang, music?: boolean): WhisperModelKey {
+  return (music ? `${lang}-music` : lang) as WhisperModelKey;
+}
 
 const MODEL_CACHE_NAME = ENGINE_CACHE_NAME;
 const INIT_TIMEOUT_MS = 120_000;
 const TRANSCRIBE_TIMEOUT_MS = 15 * 60_000;
 
-function modelUrlFor(lang: WhisperLang): string {
-  return WHISPER_MODEL_URLS[lang];
+function modelUrlFor(key: WhisperModelKey): string {
+  return WHISPER_MODEL_URLS[key];
 }
 
 // ── Non-speech token cleanup ────────────────────────────────
@@ -75,25 +81,25 @@ async function openModelCache() {
 }
 
 /** 캐시에 지정 언어의 Whisper 모델이 저장돼 있는지 확인 */
-export async function isWhisperModelCached(lang: WhisperLang = "ko"): Promise<boolean> {
+export async function isWhisperModelCached(key: WhisperModelKey = "ko"): Promise<boolean> {
   if (!("caches" in globalThis)) return false;
   const cache = await openModelCache();
-  const hit = await cache.match(new Request(modelUrlFor(lang)));
+  const hit = await cache.match(new Request(modelUrlFor(key)));
   return !!hit;
 }
 
 /** 캐시에서 지정 언어의 Whisper 모델 삭제 */
-export async function deleteWhisperModel(lang: WhisperLang = "ko"): Promise<void> {
+export async function deleteWhisperModel(key: WhisperModelKey = "ko"): Promise<void> {
   if (!("caches" in globalThis)) return;
   const cache = await openModelCache();
-  await cache.delete(new Request(modelUrlFor(lang)));
+  await cache.delete(new Request(modelUrlFor(key)));
 }
 
 async function fetchAndCacheModel(
-  lang: WhisperLang,
+  key: WhisperModelKey,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<Blob> {
-  const url = modelUrlFor(lang);
+  const url = modelUrlFor(key);
   const cache = await openModelCache();
   const cacheKey = new Request(url);
 
@@ -136,19 +142,19 @@ async function fetchAndCacheModel(
 
 /** 사용자가 명시적으로 언어별 모듈을 다운로드할 때 호출. 이미 캐시돼 있으면 no-op. */
 export async function downloadWhisperModel(
-  lang: WhisperLang = "ko",
+  key: WhisperModelKey = "ko",
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
-  if (await isWhisperModelCached(lang)) {
+  if (await isWhisperModelCached(key)) {
     onProgress?.(1, 1);
     return;
   }
-  await fetchAndCacheModel(lang, onProgress);
+  await fetchAndCacheModel(key, onProgress);
 }
 
-async function loadModelBlob(lang: WhisperLang, cb?: TranscribeCallbacks): Promise<File> {
+async function loadModelBlob(key: WhisperModelKey, cb?: TranscribeCallbacks): Promise<File> {
   const cache = await openModelCache();
-  const cacheKey = new Request(modelUrlFor(lang));
+  const cacheKey = new Request(modelUrlFor(key));
   const cached = await cache.match(cacheKey);
   if (cached) {
     const buf = await cached.arrayBuffer();
@@ -199,6 +205,8 @@ export async function releaseTranscriber() {
 
 export interface TranscribeOptions extends TranscribeCallbacks {
   lang?: WhisperLang;
+  /** Use the larger "music" model + relaxed thresholds for loud tracks. */
+  music?: boolean;
   /** Chunk length in seconds (default 60). */
   chunkSec?: number;
   /** Reports chunk-level progress: 1-based index and total chunk count. */
@@ -242,6 +250,7 @@ async function transcribeChunk(
   model: File,
   chunkFile: File,
   lang: WhisperLang,
+  music: boolean,
   offsetMs: number,
   leadInMs: number,
   onLiveSegment: (seg: WhisperSegment) => void,
@@ -283,7 +292,10 @@ async function transcribeChunk(
         lang,
         threads: Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 4)),
         token_timestamps: false,
-        suppress_non_speech: true,
+        // Aggressive non-speech suppression throws away sung lines over loud
+        // backing; in music mode we rely on cleanSegmentText() instead.
+        suppress_non_speech: !music,
+        no_speech_thold: music ? 0.2 : 0.6,
       }),
       CHUNK_TIMEOUT_MS,
       "FileTranscriber.transcribe()",
@@ -324,8 +336,10 @@ export async function transcribeMp3(
   }
 
   const lang: WhisperLang = cb.lang ?? "ko";
-  console.log("[whisper] loading model…", lang);
-  const model = await loadModelBlob(lang, cb);
+  const music = cb.music === true;
+  const key = modelKeyFor(lang, music);
+  console.log("[whisper] loading model…", key);
+  const model = await loadModelBlob(key, cb);
   console.log("[whisper] model ready:", model.size, "bytes");
 
   console.log("[whisper] decoding + chunking audio…");
@@ -352,6 +366,7 @@ export async function transcribeMp3(
         model,
         chunk.file,
         lang,
+        music,
         chunk.offsetMs,
         chunk.leadInMs,
         (seg) => cb.onSegment?.(seg),
