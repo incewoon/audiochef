@@ -118,6 +118,15 @@ export function ConverterForm() {
     }
   };
 
+  const handleQualityChange = (q: Mp3Quality) => {
+    setQuality(q);
+    try {
+      localStorage.setItem(QUALITY_KEY, q);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const handleConvert = async () => {
     if (!file) {
       toast.error("Please choose an MP4 file first.");
@@ -128,6 +137,7 @@ export function ConverterForm() {
       setProgress(0);
       const mp3 = await convertMp4ToMp3({
         file,
+        quality,
         onProgress: (r) => {
           setStatus("converting");
           setProgress(r);
@@ -137,7 +147,6 @@ export function ConverterForm() {
       const blob = writeId3Tags(mp3, {
         title: title || undefined,
         artist: artist || undefined,
-        albumArtist: albumArtist || undefined,
         album: album || undefined,
         trackNumber: trackNumber || undefined,
       });
@@ -178,7 +187,7 @@ export function ConverterForm() {
     if (fileRef.current) fileRef.current.value = "";
     setTitle("");
     setArtist("");
-    setAlbumArtist("");
+    
     setAlbum("");
     setTrackNumber("");
     setFilename("");
@@ -254,8 +263,29 @@ export function ConverterForm() {
             <Input id="artist" value={artist} onChange={(e) => setArtist(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="albumArtist">Album Artist</Label>
-            <Input id="albumArtist" value={albumArtist} onChange={(e) => setAlbumArtist(e.target.value)} />
+            <Label>Quality</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {QUALITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleQualityChange(opt.value)}
+                  disabled={busy}
+                  className={cn(
+                    "h-11 rounded-md border text-sm font-semibold transition-colors",
+                    quality === opt.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background hover:bg-accent hover:text-accent-foreground",
+                  )}
+                  aria-pressed={quality === opt.value}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              {QUALITY_OPTIONS.find((o) => o.value === quality)?.hint}
+            </p>
           </div>
           <div className="grid grid-cols-[1fr_6rem] gap-3">
             <div className="space-y-1.5 min-w-0">
