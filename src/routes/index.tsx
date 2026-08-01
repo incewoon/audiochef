@@ -8,9 +8,9 @@ import { Toaster } from "@/components/ui/sonner";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "AudioFly — MP4 to MP3 Converter" },
+      { title: "AudioChef — MP4 to MP3 Converter" },
       { name: "description", content: "Convert MP4 to MP3 with ID3 tag injection right in your browser. Offline-ready PWA." },
-      { property: "og:title", content: "AudioFly — MP4 to MP3 Converter" },
+      { property: "og:title", content: "AudioChef — MP4 to MP3 Converter" },
       { property: "og:description", content: "Convert MP4 to MP3 with ID3 tag injection right in your browser. Offline-ready PWA." },
     ],
   }),

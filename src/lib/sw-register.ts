@@ -83,7 +83,7 @@ export function registerAppSW() {
 }
 
 // Offline verification (published app, not preview):
-// 1) Load AudioFly online and wait until /sw.js is activated.
+// 1) Load AudioChef online and wait until /sw.js is activated.
 // 2) Keep the page open long enough for [audiofly:pwa] engine cache logs to finish.
 // 3) Switch DevTools Network to Offline, then reload the installed app.
 // 4) The app shell, MP4 conversion engine, and SYLT model should load from cache.
