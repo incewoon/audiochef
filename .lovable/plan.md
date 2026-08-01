@@ -1,39 +1,33 @@
-## 원인
+## 목표
 
-락처럼 연주음이 큰 곡은 두 가지가 겹칩니다.
+MP4 → MP3 변환 페이지에서 **Album Artist 입력창을 제거**하고, 그 자리에 **음질(변환율) 선택 토글**을 배치합니다. 선택값은 localStorage에 저장되어 초기화·재방문 후에도 유지됩니다.
 
-1. **전처리 없음** — 현재 `src/lib/whisper/chunk.ts`는 채널 평균만 내서 16kHz로 넘깁니다. 드럼·베이스·기타가 보컬을 덮은 원음 그대로라 Whisper가 음성 자체를 못 찾습니다.
-2. **작은 모델** — 지금 쓰는 `base-q5_1`(약 60MB)는 조용한 음성용으로, 악기 위에 얹힌 노래에는 거의 무력합니다. 그래서 결과가 전부 걸러지고 빈 가사가 나옵니다.
+## 음질 옵션 (3가지)
 
-## 해결 1: 보컬 강조 전처리 (기본 적용)
+| 버튼 | 설정 | 대략 크기/특징 |
+|---|---|---|
+| Standard | `-b:a 128k` (CBR) | 가장 작은 용량 |
+| **High (기본)** | `-q:a 2` (VBR ~190kbps) | 현재 쓰는 값 = 기본값 |
+| Max | `-b:a 320k` (CBR) | 최고 음질, 용량 큼 |
 
-`src/lib/whisper/chunk.ts`의 디코딩 경로를 `OfflineAudioContext`(16kHz) 렌더링으로 교체하고, 체인을 다음과 같이 구성합니다.
+기본 선택은 현재 세팅인 High이며, 사용자가 바꾸면 그 값이 계속 유지됩니다.
 
-- **중앙(mid) 추출**: L+R 합 — 보컬은 대개 센터에 있어 사이드로 퍼진 기타/리버브 비중을 줄임
-- **하이패스 180Hz** — 킥/베이스 제거
-- **로우패스 5.5kHz** — 심벌/하이햇 제거 (Whisper는 어차피 8kHz까지만 씀)
-- **보컬 대역 부스트**: 1~3kHz 피킹 EQ +4dB (자음 명료도)
-- **DynamicsCompressor** (threshold -28dB, ratio 6) + 피크 정규화 — 악기에 묻힌 작은 보컬을 끌어올림
+## UI
 
-렌더 결과를 기존과 동일한 Float32 PCM으로 받아 지금의 청크 분할 로직을 그대로 사용합니다. 무음 경계 탐색도 전처리된 신호 기준이라 더 잘 맞습니다.
+`src/components/ConverterForm.tsx`
+- `albumArtist` state와 Album Artist 입력 필드 삭제 (ID3 태그 기록에서도 제거)
+- 그 자리에 `Quality` 라벨 + 3분할 세그먼트 토글(파일명 프리셋 버튼과 동일한 스타일 톤) 배치, 아래에 선택된 옵션 설명(예: "High — VBR ~190 kbps") 표기
+- 선택값을 `audiofly:mp3-quality` 키로 localStorage 저장, 마운트 시 복원
+- 변환 완료 후 폼 초기화(`resetAll`) 시에도 **음질 선택값은 지우지 않음** (요청대로 유지)
 
-## 해결 2: 음악용 고정밀 모델 선택
+## 변환 로직
 
-`src/lib/engine-assets.ts`에 `small` 계열 모델 추가:
-- `ko-music`: `ggml-small-q5_1.bin` (약 190MB)
-- `en-music`: `ggml-small.en-q5_1.bin` (약 190MB)
-
-`LyricsDialog`의 모델 영역에 **"Music mode (high accuracy)"** 체크박스를 두고, 켜면 small 모델을 쓰도록 `WhisperLang` 선택을 확장합니다. 다운로드/캐시 상태 표시와 수동 다운로드 버튼은 기존 UI를 그대로 재사용하고, 용량이 커서 처음 한 번은 다운로드가 필요하다는 안내를 붙입니다. 인식 속도는 대략 2~3배 느려지므로 안내 문구에 명시합니다.
-
-## 해결 3: 인식 파라미터 완화
-
-`src/lib/whisper/transcribe.ts`의 `transcribe()` 옵션:
-- 음악 모드에서는 `suppress_non_speech: false` (강한 억제가 노래를 통째로 버리는 경우가 있어, 대신 기존 `cleanSegmentText` 후처리로 음표/태그 제거)
-- `no_speech_thold`를 기본보다 낮춰(0.2) 악기 구간에서 보컬을 놓치지 않게 함
-- 결과가 0줄이면 실패로 두지 말고, "No lyrics detected — try Music mode / check the track" 안내 토스트 노출
+`src/lib/convert.ts`
+- `convertMp4ToMp3`에 `quality` 옵션 추가 (`"standard" | "high" | "max"`, 기본 `"high"`)
+- ffmpeg 인자를 옵션에 따라 분기: `-q:a 2` 또는 `-b:a 128k` / `-b:a 320k`
+- 나머지 로직(타임아웃, 진행률, 파일 정리)은 그대로
 
 ## 기술 메모
 
-- 전처리는 전부 브라우저 내장 WebAudio라 오프라인 동작·PWA 캐시에 영향 없음
-- 실제 스템 분리(Demucs 등)는 브라우저에서 수백 MB 모델과 GPU가 필요해 이번 범위 제외 — 위 EQ/컴프레서 조합이 웹에서 가능한 최선의 근사
-- 변경 파일: `src/lib/whisper/chunk.ts`, `src/lib/whisper/transcribe.ts`, `src/lib/engine-assets.ts`, `src/components/LyricsDialog.tsx`
+- Album Artist 제거는 변환 페이지에만 적용하고, `/tag-editor`의 Album Artist 편집 기능은 그대로 둡니다.
+- 변경 파일: `src/components/ConverterForm.tsx`, `src/lib/convert.ts`

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { convertMp4ToMp3 } from "@/lib/convert";
+import { convertMp4ToMp3, type Mp3Quality } from "@/lib/convert";
 import { writeId3Tags } from "@/lib/id3";
 import { pickFileNative } from "@/lib/pick-file";
 import { clickFileInputGuarded } from "@/lib/picker-history-guard";
@@ -25,6 +25,13 @@ type Status = "idle" | "loading" | "converting" | "tagging" | "done";
 type Preset = "1" | "2" | "3";
 
 const PRESET_KEY = "audiofly:filename-preset";
+const QUALITY_KEY = "audiofly:mp3-quality";
+
+const QUALITY_OPTIONS: { value: Mp3Quality; label: string; hint: string }[] = [
+  { value: "standard", label: "Standard", hint: "Standard — CBR 128 kbps, smallest file" },
+  { value: "high", label: "High", hint: "High — VBR ~190 kbps, best balance" },
+  { value: "max", label: "Max", hint: "Max — CBR 320 kbps, largest file" },
+];
 
 const PRESET_LABELS: Record<Preset, string> = {
   "1": "Artist-Track-Title",
@@ -54,15 +61,17 @@ export function ConverterForm() {
 
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
-  const [albumArtist, setAlbumArtist] = useState("");
   const [trackNumber, setTrackNumber] = useState("");
   const [album, setAlbum] = useState("");
+  const [quality, setQuality] = useState<Mp3Quality>("high");
 
-  // Load saved preset on mount
+  // Load saved preset + quality on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(PRESET_KEY);
       if (saved === "1" || saved === "2" || saved === "3") setPreset(saved);
+      const q = localStorage.getItem(QUALITY_KEY);
+      if (q === "standard" || q === "high" || q === "max") setQuality(q);
     } catch {
       /* ignore */
     }
@@ -109,6 +118,15 @@ export function ConverterForm() {
     }
   };
 
+  const handleQualityChange = (q: Mp3Quality) => {
+    setQuality(q);
+    try {
+      localStorage.setItem(QUALITY_KEY, q);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const handleConvert = async () => {
     if (!file) {
       toast.error("Please choose an MP4 file first.");
@@ -119,6 +137,7 @@ export function ConverterForm() {
       setProgress(0);
       const mp3 = await convertMp4ToMp3({
         file,
+        quality,
         onProgress: (r) => {
           setStatus("converting");
           setProgress(r);
@@ -128,7 +147,6 @@ export function ConverterForm() {
       const blob = writeId3Tags(mp3, {
         title: title || undefined,
         artist: artist || undefined,
-        albumArtist: albumArtist || undefined,
         album: album || undefined,
         trackNumber: trackNumber || undefined,
       });
@@ -169,7 +187,7 @@ export function ConverterForm() {
     if (fileRef.current) fileRef.current.value = "";
     setTitle("");
     setArtist("");
-    setAlbumArtist("");
+    
     setAlbum("");
     setTrackNumber("");
     setFilename("");
@@ -245,8 +263,29 @@ export function ConverterForm() {
             <Input id="artist" value={artist} onChange={(e) => setArtist(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="albumArtist">Album Artist</Label>
-            <Input id="albumArtist" value={albumArtist} onChange={(e) => setAlbumArtist(e.target.value)} />
+            <Label>Quality</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {QUALITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleQualityChange(opt.value)}
+                  disabled={busy}
+                  className={cn(
+                    "h-11 rounded-md border text-sm font-semibold transition-colors",
+                    quality === opt.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background hover:bg-accent hover:text-accent-foreground",
+                  )}
+                  aria-pressed={quality === opt.value}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              {QUALITY_OPTIONS.find((o) => o.value === quality)?.hint}
+            </p>
           </div>
           <div className="grid grid-cols-[1fr_6rem] gap-3">
             <div className="space-y-1.5 min-w-0">
