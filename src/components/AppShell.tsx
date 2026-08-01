@@ -17,7 +17,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             strokeWidth={1.5}
           />
           <span className="bg-gradient-to-r from-primary via-primary to-accent-foreground bg-clip-text text-transparent">
-            Fly
+            Chef
           </span>
         </h1>
         <p className="mt-1 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">

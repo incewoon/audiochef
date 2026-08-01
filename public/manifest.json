@@ -1,6 +1,6 @@
 {
-  "name": "AudioFly",
-  "short_name": "AudioFly",
+  "name": "AudioChef",
+  "short_name": "AudioChef",
   "description": "MP4 동영상을 브라우저 안에서 바로 MP3로 변환하고 ID3 태그를 주입하는 오프라인 지원 웹앱.",
   "start_url": "/",
   "scope": "/",
