@@ -1,7 +1,7 @@
 // src/components/AppShell.tsx
 
-import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
+import chefHat from "@/assets/chef-hat.png";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -11,10 +11,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="bg-gradient-to-r from-primary via-primary to-accent-foreground bg-clip-text text-transparent">
             Audio
           </span>
-          <Zap
-            aria-hidden="true"
-            className="mx-0.5 h-8 w-8 sm:h-10 sm:w-10 text-yellow-400 fill-yellow-400 drop-shadow-[0_0_6px_rgba(250,204,21,0.5)]"
-            strokeWidth={1.5}
+          <img
+            src={chefHat}
+            alt="Chef hat"
+            width={512}
+            height={512}
+            className="mx-0.5 h-9 w-9 sm:h-11 sm:w-11 object-contain drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]"
           />
           <span className="bg-gradient-to-r from-primary via-primary to-accent-foreground bg-clip-text text-transparent">
             Chef
