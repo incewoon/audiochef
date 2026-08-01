@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { convertMp4ToMp3 } from "@/lib/convert";
+import { convertMp4ToMp3, type Mp3Quality } from "@/lib/convert";
 import { writeId3Tags } from "@/lib/id3";
 import { pickFileNative } from "@/lib/pick-file";
 import { clickFileInputGuarded } from "@/lib/picker-history-guard";
@@ -25,6 +25,13 @@ type Status = "idle" | "loading" | "converting" | "tagging" | "done";
 type Preset = "1" | "2" | "3";
 
 const PRESET_KEY = "audiofly:filename-preset";
+const QUALITY_KEY = "audiofly:mp3-quality";
+
+const QUALITY_OPTIONS: { value: Mp3Quality; label: string; hint: string }[] = [
+  { value: "standard", label: "Standard", hint: "Standard — CBR 128 kbps, smallest file" },
+  { value: "high", label: "High", hint: "High — VBR ~190 kbps, best balance" },
+  { value: "max", label: "Max", hint: "Max — CBR 320 kbps, largest file" },
+];
 
 const PRESET_LABELS: Record<Preset, string> = {
   "1": "Artist-Track-Title",
@@ -54,15 +61,17 @@ export function ConverterForm() {
 
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
-  const [albumArtist, setAlbumArtist] = useState("");
   const [trackNumber, setTrackNumber] = useState("");
   const [album, setAlbum] = useState("");
+  const [quality, setQuality] = useState<Mp3Quality>("high");
 
-  // Load saved preset on mount
+  // Load saved preset + quality on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(PRESET_KEY);
       if (saved === "1" || saved === "2" || saved === "3") setPreset(saved);
+      const q = localStorage.getItem(QUALITY_KEY);
+      if (q === "standard" || q === "high" || q === "max") setQuality(q);
     } catch {
       /* ignore */
     }
