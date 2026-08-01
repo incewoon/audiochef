@@ -68,13 +68,22 @@ export async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> 
   return loadPromise;
 }
 
+export type Mp3Quality = "standard" | "high" | "max";
+
+const QUALITY_ARGS: Record<Mp3Quality, string[]> = {
+  standard: ["-b:a", "128k"],
+  high: ["-q:a", "2"],
+  max: ["-b:a", "320k"],
+};
+
 export interface ConvertOptions {
   file: File;
+  quality?: Mp3Quality;
   onProgress?: (ratio: number) => void;
   onLog?: (msg: string) => void;
 }
 
-export async function convertMp4ToMp3({ file, onProgress, onLog }: ConvertOptions): Promise<Uint8Array> {
+export async function convertMp4ToMp3({ file, quality = "high", onProgress, onLog }: ConvertOptions): Promise<Uint8Array> {
   const ff = await getFFmpeg(onLog);
 
   const progressHandler = ({ progress }: { progress: number }) => {
@@ -88,7 +97,10 @@ export async function convertMp4ToMp3({ file, onProgress, onLog }: ConvertOption
   try {
     await ff.writeFile(inputName, await fetchFile(file));
     const exitCode = await withTimeout(
-      ff.exec(["-i", inputName, "-vn", "-codec:a", "libmp3lame", "-q:a", "2", outputName], CONVERT_TIMEOUT_MS),
+      ff.exec(
+        ["-i", inputName, "-vn", "-codec:a", "libmp3lame", ...(QUALITY_ARGS[quality] ?? QUALITY_ARGS.high), outputName],
+        CONVERT_TIMEOUT_MS,
+      ),
       CONVERT_TIMEOUT_MS + 5_000,
       "ffmpeg.exec()",
     );
