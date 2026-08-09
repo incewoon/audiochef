@@ -79,6 +79,7 @@ async function openModelCache() {
   if (!("caches" in globalThis)) {
     throw new Error("This browser does not support offline model caching.");
   }
+  await migrateLegacyEngineCaches();
   return caches.open(MODEL_CACHE_NAME);
 }
 
