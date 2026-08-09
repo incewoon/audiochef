@@ -1,33 +1,47 @@
 ## 목표
 
-MP4 → MP3 변환 페이지에서 **Album Artist 입력창을 제거**하고, 그 자리에 **음질(변환율) 선택 토글**을 배치합니다. 선택값은 localStorage에 저장되어 초기화·재방문 후에도 유지됩니다.
+Capacitor·네이티브 코드 없이, 웹/PWA 쪽만 Google Play TWA 준비 상태로 정리합니다. COOP/COEP, Service Worker 가드, ffmpeg/Whisper 로딩 경로는 손대지 않습니다.
 
-## 음질 옵션 (3가지)
+## A. 영속 저장소 (storage.persist)
 
-| 버튼 | 설정 | 대략 크기/특징 |
-|---|---|---|
-| Standard | `-b:a 128k` (CBR) | 가장 작은 용량 |
-| **High (기본)** | `-q:a 2` (VBR ~190kbps) | 현재 쓰는 값 = 기본값 |
-| Max | `-b:a 320k` (CBR) | 최고 음질, 용량 큼 |
+새 헬퍼 `src/lib/persist-storage.ts`
+- `requestPersistentStorage()`: `navigator.storage?.persist` 없으면 no-op, 이미 persisted면 즉시 반환, 결과가 false여도 `console.info`만 남기고 throw 하지 않음.
+- 호출 위치: `src/lib/whisper/transcribe.ts`의 `fetchAndCacheModel()` 안 `cache.put(...)` 직후 (즉 `downloadWhisperModel` 성공 경로). `void requestPersistentStorage()`로 비차단 호출.
 
-기본 선택은 현재 세팅인 High이며, 사용자가 바꾸면 그 값이 계속 유지됩니다.
+## B. 캐시 / 브랜드 이름 정리
 
-## UI
+- `src/lib/engine-assets.ts`: `ENGINE_CACHE_NAME`을 `audiochef-media-engines-v1`로 변경하고, 구 이름 `audiofly-media-engines-v2`를 `LEGACY_ENGINE_CACHE_NAMES`로 export.
+- `scripts/generate-sw.mjs`: 런타임 캐시 이름 2곳을 동일한 새 이름으로 변경.
+- **기존 사용자 데이터 보존**: 이름만 바꾸면 이미 받아둔 Whisper 모델(최대 190MB)이 사라지므로, `transcribe.ts`의 `openModelCache()`에서 1회성 마이그레이션을 수행 — 새 캐시가 비어 있고 legacy 캐시에 항목이 있으면 `cache.put`으로 엔트리를 새 캐시에 복사한 뒤 legacy 캐시를 `caches.delete`로 정리. 실패해도 조용히 무시(그 경우 사용자가 재다운로드).
+- `public/service-worker.js`(구 경로 kill-switch)의 정규식이 `audiofly-`를 지우게 되어 있으므로 그대로 두되, 새 `audiochef-` 캐시는 절대 지우지 않도록 패턴을 확인/유지.
+- `package.json`의 `"name"`을 `"audiochef"`로 변경.
+- localStorage 키(`audiofly:*`, `audiofly.*`)와 히스토리 가드 sentinel은 사용자 설정 초기화를 피하려고 그대로 둡니다(원하시면 마이그레이션 포함 가능).
 
-`src/components/ConverterForm.tsx`
-- `albumArtist` state와 Album Artist 입력 필드 삭제 (ID3 태그 기록에서도 제거)
-- 그 자리에 `Quality` 라벨 + 3분할 세그먼트 토글(파일명 프리셋 버튼과 동일한 스타일 톤) 배치, 아래에 선택된 옵션 설명(예: "High — VBR ~190 kbps") 표기
-- 선택값을 `audiofly:mp3-quality` 키로 localStorage 저장, 마운트 시 복원
-- 변환 완료 후 폼 초기화(`resetAll`) 시에도 **음질 선택값은 지우지 않음** (요청대로 유지)
+## C. TWA / Digital Asset Links
 
-## 변환 로직
+- `public/.well-known/assetlinks.json` 신규 추가 (placeholder):
 
-`src/lib/convert.ts`
-- `convertMp4ToMp3`에 `quality` 옵션 추가 (`"standard" | "high" | "max"`, 기본 `"high"`)
-- ffmpeg 인자를 옵션에 따라 분기: `-q:a 2` 또는 `-b:a 128k` / `-b:a 320k`
-- 나머지 로직(타임아웃, 진행률, 파일 정리)은 그대로
+```text
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.audiochef.app",
+    "sha256_cert_fingerprints": ["REPLACE_WITH_RELEASE_CERT_SHA256"]
+  }
+}]
+```
 
-## 기술 메모
+- `public/` 전체가 빌드 산출물로 복사되므로 별도 설정 없이 `/.well-known/assetlinks.json`으로 서빙됩니다. `generate-sw.mjs` precache glob에 잡히지 않도록(항상 네트워크에서 최신값을 읽도록) `globIgnores`에 `.well-known/**` 추가.
 
-- Album Artist 제거는 변환 페이지에만 적용하고, `/tag-editor`의 Album Artist 편집 기능은 그대로 둡니다.
-- 변경 파일: `src/components/ConverterForm.tsx`, `src/lib/convert.ts`
+## D. manifest / 오프라인 폴백 점검
+
+- `public/manifest.json`은 이미 AudioChef / standalone / start_url `/` / scope `/` / 192·512 아이콘 / theme_color `#0f172a` 로 TWA 요건 충족 — 변경 없음.
+- `public/offline.html`과 SW 폴백 동작도 그대로 유지, 리라이트 없음.
+
+## 변경 파일
+
+- 신규: `src/lib/persist-storage.ts`, `public/.well-known/assetlinks.json`
+- 수정: `src/lib/engine-assets.ts`, `src/lib/whisper/transcribe.ts`, `scripts/generate-sw.mjs`, `package.json`
+
+vite-plugin-pwa는 계속 비활성 유지(workbox `generate-sw.mjs` 단일 경로), preview/iframe/dev SW 차단 가드도 그대로 둡니다.
