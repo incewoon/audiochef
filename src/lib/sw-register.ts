@@ -40,6 +40,7 @@ async function unregisterAppSW(extra: string[] = []) {
 
 async function prewarmEngineCache() {
   if (!("caches" in window)) return;
+  await migrateLegacyEngineCaches();
   const cache = await caches.open(ENGINE_CACHE_NAME);
   for (const url of ENGINE_CACHE_URLS) {
     const request = new Request(url, { credentials: "same-origin" });
