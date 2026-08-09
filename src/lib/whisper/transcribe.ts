@@ -140,6 +140,8 @@ async function fetchAndCacheModel(
       },
     }),
   );
+  // Model is now on disk — ask for persistent storage so it is not evicted.
+  void requestPersistentStorage();
   return blob;
 }
 
