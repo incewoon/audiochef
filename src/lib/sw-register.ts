@@ -4,6 +4,7 @@
 // production origin — never in Lovable preview, iframe embeds, or dev.
 
 import { ENGINE_CACHE_NAME, ENGINE_CACHE_URLS } from "./engine-assets";
+import { migrateLegacyEngineCaches } from "./engine-cache-migrate";
 
 const APP_SW_PATH = "/sw.js";
 const LEGACY_SW_PATHS = ["/service-worker.js"];
