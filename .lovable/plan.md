@@ -6,16 +6,24 @@ Capacitor·네이티브 코드 없이, 웹/PWA 쪽만 Google Play TWA 준비 상
 
 새 헬퍼 `src/lib/persist-storage.ts`
 - `requestPersistentStorage()`: `navigator.storage?.persist` 없으면 no-op, 이미 persisted면 즉시 반환, 결과가 false여도 `console.info`만 남기고 throw 하지 않음.
-- 호출 위치: `src/lib/whisper/transcribe.ts`의 `fetchAndCacheModel()` 안 `cache.put(...)` 직후 (즉 `downloadWhisperModel` 성공 경로). `void requestPersistentStorage()`로 비차단 호출.
+- 호출 위치 두 곳(둘 다 `void`로 비차단 호출):
+  1. `src/lib/whisper/transcribe.ts`의 `fetchAndCacheModel()` 안 `cache.put(...)` 성공 직후 (= `downloadWhisperModel` 성공 경로)
+  2. `migrateLegacyEngineCaches()`가 legacy 엔트리를 새 캐시로 복사한 직후
 
 ## B. 캐시 / 브랜드 이름 정리
 
-- `src/lib/engine-assets.ts`: `ENGINE_CACHE_NAME`을 `audiochef-media-engines-v1`로 변경하고, 구 이름 `audiofly-media-engines-v2`를 `LEGACY_ENGINE_CACHE_NAMES`로 export.
+- `src/lib/engine-assets.ts`: `ENGINE_CACHE_NAME`을 `audiochef-media-engines-v1`로 변경하고, 구 이름 배열 `LEGACY_ENGINE_CACHE_NAMES = ["audiofly-media-engines-v2"]`를 export.
 - `scripts/generate-sw.mjs`: 런타임 캐시 이름 2곳을 동일한 새 이름으로 변경.
-- **기존 사용자 데이터 보존**: 이름만 바꾸면 이미 받아둔 Whisper 모델(최대 190MB)이 사라지므로, `transcribe.ts`의 `openModelCache()`에서 1회성 마이그레이션을 수행 — 새 캐시가 비어 있고 legacy 캐시에 항목이 있으면 `cache.put`으로 엔트리를 새 캐시에 복사한 뒤 legacy 캐시를 `caches.delete`로 정리. 실패해도 조용히 무시(그 경우 사용자가 재다운로드).
+- **공통 마이그레이션 헬퍼** `migrateLegacyEngineCaches()` (`src/lib/engine-assets.ts` 혹은 `src/lib/engine-cache-migrate.ts`):
+  - 각 legacy 캐시를 열어 `keys()` 전체를 새 `ENGINE_CACHE_NAME` 캐시로 `cache.put(request, response)` 복사 (새 캐시에 이미 있는 항목은 건너뜀)
+  - 복사 완료 후 `caches.delete(legacyName)`
+  - 하나라도 복사했으면 직후에 `void requestPersistentStorage()`
+  - **모듈 레벨 Promise 락**으로 감싸 세션당 1회만 실행 (동시 호출은 같은 Promise 공유), 실패해도 조용히 무시(그 경우 사용자가 재다운로드)
+  - 호출처: `transcribe.ts`의 `openModelCache()`와 `sw-register.ts`의 `prewarmEngineCache()` — 둘 다 캐시를 열기 전에 `await`
 - `public/service-worker.js`(구 경로 kill-switch)의 정규식이 `audiofly-`를 지우게 되어 있으므로 그대로 두되, 새 `audiochef-` 캐시는 절대 지우지 않도록 패턴을 확인/유지.
 - `package.json`의 `"name"`을 `"audiochef"`로 변경.
 - localStorage 키(`audiofly:*`, `audiofly.*`)와 히스토리 가드 sentinel은 사용자 설정 초기화를 피하려고 그대로 둡니다(원하시면 마이그레이션 포함 가능).
+
 
 ## C. TWA / Digital Asset Links
 
