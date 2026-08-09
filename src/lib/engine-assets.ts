@@ -31,7 +31,9 @@ export const WHISPER_MODEL_SIZE_LABELS = {
 } as const;
 export const SHOUT_WASM_JS_URL = "/whisper/shout.wasm.js";
 
-export const ENGINE_CACHE_NAME = "audiofly-media-engines-v2";
+export const ENGINE_CACHE_NAME = "audiochef-media-engines-v1";
+// Older AudioFly-branded cache; entries are migrated once then deleted.
+export const LEGACY_ENGINE_CACHE_NAMES: readonly string[] = ["audiofly-media-engines-v2"];
 
 // SW prewarm 대상 — Whisper 모델은 여기에 포함하지 않는다.
 export const ENGINE_CACHE_URLS: readonly string[] = [

@@ -60,6 +60,7 @@ const { count, size, warnings } = await generateSW({
     "**/_worker.js",
     "_worker.js",
     "**/wrangler.json",
+    ".well-known/**",
   ],
   cleanupOutdatedCaches: true,
   skipWaiting: true,
@@ -97,7 +98,7 @@ const { count, size, warnings } = await generateSW({
           url.pathname === "/whisper/shout.wasm.js"),
       handler: "CacheFirst",
       options: {
-        cacheName: "audiofly-media-engines-v2",
+        cacheName: "audiochef-media-engines-v1",
         expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 365 },
         cacheableResponse: { statuses: [0, 200] },
       },
@@ -108,7 +109,7 @@ const { count, size, warnings } = await generateSW({
         /^\/__l5e\/assets-v1\//.test(url.pathname),
       handler: "CacheFirst",
       options: {
-        cacheName: "audiofly-media-engines-v2",
+        cacheName: "audiochef-media-engines-v1",
         expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 365 },
         cacheableResponse: { statuses: [0, 200] },
         rangeRequests: true,

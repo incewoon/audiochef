@@ -24,6 +24,8 @@ import {
   SHOUT_WASM_JS_URL,
   ENGINE_CACHE_NAME,
 } from "../engine-assets";
+import { migrateLegacyEngineCaches } from "../engine-cache-migrate";
+import { requestPersistentStorage } from "../persist-storage";
 
 export type WhisperLang = "ko" | "en";
 /** Model bucket: base for speech, "-music" (small) for loud instrumentation. */
@@ -77,6 +79,7 @@ async function openModelCache() {
   if (!("caches" in globalThis)) {
     throw new Error("This browser does not support offline model caching.");
   }
+  await migrateLegacyEngineCaches();
   return caches.open(MODEL_CACHE_NAME);
 }
 
@@ -137,6 +140,8 @@ async function fetchAndCacheModel(
       },
     }),
   );
+  // Model is now on disk — ask for persistent storage so it is not evicted.
+  void requestPersistentStorage();
   return blob;
 }
 

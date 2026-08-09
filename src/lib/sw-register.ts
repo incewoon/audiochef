@@ -4,6 +4,7 @@
 // production origin — never in Lovable preview, iframe embeds, or dev.
 
 import { ENGINE_CACHE_NAME, ENGINE_CACHE_URLS } from "./engine-assets";
+import { migrateLegacyEngineCaches } from "./engine-cache-migrate";
 
 const APP_SW_PATH = "/sw.js";
 const LEGACY_SW_PATHS = ["/service-worker.js"];
@@ -39,6 +40,7 @@ async function unregisterAppSW(extra: string[] = []) {
 
 async function prewarmEngineCache() {
   if (!("caches" in window)) return;
+  await migrateLegacyEngineCaches();
   const cache = await caches.open(ENGINE_CACHE_NAME);
   for (const url of ENGINE_CACHE_URLS) {
     const request = new Request(url, { credentials: "same-origin" });
