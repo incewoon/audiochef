@@ -24,6 +24,8 @@ import {
   SHOUT_WASM_JS_URL,
   ENGINE_CACHE_NAME,
 } from "../engine-assets";
+import { migrateLegacyEngineCaches } from "../engine-cache-migrate";
+import { requestPersistentStorage } from "../persist-storage";
 
 export type WhisperLang = "ko" | "en";
 /** Model bucket: base for speech, "-music" (small) for loud instrumentation. */
